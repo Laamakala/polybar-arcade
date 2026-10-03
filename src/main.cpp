@@ -178,6 +178,14 @@ const int MENU_SCALE_3[3] = {
     311 // Eb
 };
 
+// constant helpers
+constexpr int FRET_COUNT = 5;
+constexpr int STRUM_LED_COUNT = 2;
+constexpr int REACTION_ROUNDS = 3;
+constexpr int TOP_SCORE_COUNT = 4;
+constexpr int INITIAL_COUNT = 4;
+constexpr int MAX_DIFFICULTIES = 5;
+
 // ----- GAME DIFFICULTY MENU TRACKING ----- //
 
 // speedtest game difficulty menu index
@@ -250,10 +258,6 @@ const char* ROOT_NAMES[6] = {
   "D6"
 };
 
-// ----- HIGH SCORE TRACKING ----- //
-const int TOP_SCORE_COUNT = 4;
-const int MAX_DIFFICULTIES = 5;
-
 // ----- STRUCTURES AND ENUMS ----- //
 
 // High score tracking variables
@@ -262,8 +266,6 @@ struct HighScores {
   int noLight[MAX_DIFFICULTIES][TOP_SCORE_COUNT];
 };
 
-// High score writing initials
-const int INITIAL_COUNT = 4;
 
 // Initials for Speedtest normal mode
 char speedNormalInitials
@@ -1090,9 +1092,6 @@ void drawInitialsEntry() {
     tft.setCursor(x, y);
     tft.print(enteredInitials[i]);
   }
-
-  soundEnabled = false;
-
 /*
   // Small control instructions
   tft.setTextSize(1);
@@ -1100,6 +1099,7 @@ void drawInitialsEntry() {
   tft.setCursor(2, 70);
   tft.print("STRUM:CHANGE G:OK R:BACK");
 */
+
 }
 
 // Final Score screen
@@ -1364,7 +1364,7 @@ void startReactionCue(int targetFret) {
   if (useLight) {
     if (reactionIndex == 0) {
       // Simple mode accepts any fret
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < FRET_COUNT; i++) {
         digitalWrite(LED_PINS[i], HIGH);
       }
 
@@ -2240,7 +2240,7 @@ void updateSoloMenu() {
 void updateMenuLEDs() {
   
   // Fret LEDs
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FRET_COUNT; i++) {
     digitalWrite(
       LED_PINS[i],
       digitalRead(BUTTON_PINS[i]) == LOW ? HIGH : LOW
@@ -2915,7 +2915,7 @@ void runReactionGame() {
 
     while (millis() - waitStart < waitTime) {
 
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < FRET_COUNT; i++) {
 
         if (digitalRead(BUTTON_PINS[i]) == LOW) {
 
@@ -2981,7 +2981,7 @@ void runReactionGame() {
 
     while (!success) {
 
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < FRET_COUNT; i++) {
 
         if (digitalRead(BUTTON_PINS[i]) == LOW) {
 
@@ -3276,7 +3276,7 @@ void runSoloGame() {
 void playStartupFretSequence() {
 
   // Make sure all fret LEDs begin off
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FRET_COUNT; i++) {
     digitalWrite(LED_PINS[i], LOW);
   }
 
@@ -3304,7 +3304,7 @@ void playStartupFretSequence() {
   };
 
   // Light fret LEDs one by one
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FRET_COUNT; i++) {
     // Check for Green + Orange held during startup -> mute sounds
     if (
       digitalRead(BUTTON_PINS[0]) == LOW &&
@@ -3344,12 +3344,12 @@ void playStartupFretSequence() {
   delay(50);
 
   // Light all fret LEDs together
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FRET_COUNT; i++) {
     digitalWrite(LED_PINS[i], HIGH);
   }
 
   // Light both strum LEDs together
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
     digitalWrite(LED_STRUM_PINS[i], HIGH);
   }
 
@@ -3367,13 +3367,13 @@ void playStartupFretSequence() {
 */
 
   // Turn off all fret LEDs
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FRET_COUNT; i++) {
     digitalWrite(LED_PINS[i], LOW);
   delay(50);
   }
 
   // Turn off both strum LEDs
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
     digitalWrite(LED_STRUM_PINS[i], LOW);
   }
 
@@ -3422,12 +3422,12 @@ void setup() {
   
 
   // Fret buttons
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FRET_COUNT; i++) {
     pinMode(BUTTON_PINS[i], INPUT_PULLUP);
   }
 
   // Fret LEDs
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FRET_COUNT; i++) {
     pinMode(LED_PINS[i], OUTPUT);
     digitalWrite(LED_PINS[i], LOW);
   }
@@ -3437,7 +3437,7 @@ void setup() {
   pinMode(STRUM_DOWN_PIN, INPUT_PULLUP);
 
   // Strum LEDs
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
     pinMode(LED_STRUM_PINS[i], OUTPUT);
     digitalWrite(LED_STRUM_PINS[i], LOW);
   }
@@ -3448,17 +3448,6 @@ void setup() {
 
   noTone(NOTE_BUZZER);
   noTone(FX_BUZZER);
-/*
-  // Check for Green + Orange held during startup -> mute sounds
-  if (
-    digitalRead(BUTTON_PINS[0]) == LOW // &&
-    // digitalRead(BUTTON_PINS[4]) == LOW  
-  ) { 
-    soundEnabled = false;
-    noTone(NOTE_BUZZER);
-    noTone(FX_BUZZER);
-  }
-*/
 
   // Run the startup hardware test
   playStartupFretSequence();

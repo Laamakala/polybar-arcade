@@ -65,14 +65,14 @@
       "id": "bz1",
       "top": -324,
       "left": -84.6,
-      "attrs": { "volume": "0.1" }
+      "attrs": { "volume": "0.5", "mode": "smooth" }
     },
     {
       "type": "wokwi-buzzer",
       "id": "bz2",
       "top": -324,
       "left": 261,
-      "attrs": { "volume": "0.1" }
+      "attrs": { "volume": "0.5", "mode": "smooth" }
     },
     { "type": "wokwi-led", "id": "led1", "top": 54, "left": -53.8, "attrs": { "color": "green" } },
     { "type": "wokwi-led", "id": "led2", "top": 54, "left": 13.4, "attrs": { "color": "red" } },
