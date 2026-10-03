@@ -4,6 +4,10 @@ A Raspberry Pi Pico W arcade controller and game collection built with C++, Plat
 
 Polybar Arcade combines five illuminated fret buttons, a two-direction strum control, two buzzers, and a TFT display. The current firmware includes menu navigation, multiple difficulty levels, top-four leaderboards, four-character player initials, startup light and sound effects, and four game modes.
 
+![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade_splash-screen.png)
+![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade_menu.png)
+![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade_speedtest.png)
+![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade_highscores.png)
 ![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade.png)
 
 ## Current games
