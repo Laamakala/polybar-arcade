@@ -1,0 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap');
+
+:root {
+  color-scheme: dark;
+  --bg: #090b16;
+  --panel: #12162a;
+  --text: #fff5b4;
+  --muted: #aeb7cc;
+  --pink: #ff4fa0;
+  --mint: #64ffbe;
+  --turquoise: #40e0d0;
+  --lavender: #be8cff;
+  --coral: #ff697d;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: radial-gradient(circle at 80% 0%, #291242 0, transparent 35%), var(--bg);
+  color: var(--text);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  line-height: 1.6;
+}
+a { color: inherit; }
+.hero {
+  min-height: 78vh;
+  display: grid;
+  grid-template-columns: 1.1fr .9fr;
+  align-items: center;
+  gap: 3rem;
+  padding: 5rem max(6vw, 1.5rem);
+}
+.hero img {
+  width: 100%;
+  max-height: 560px;
+  object-fit: contain;
+  border: 1px solid #ffffff22;
+  border-radius: 24px;
+  background: #ffffff08;
+  box-shadow: 0 24px 80px #0008;
+}
+h1 { font-size: clamp(3.4rem, 9vw, 7.5rem); line-height: .88; margin: .25rem 0 1.5rem; color: var(--pink); }
+h2 { font-size: clamp(2rem, 4vw, 3.7rem); line-height: 1.05; margin: .4rem 0 1.5rem; }
+h3 { color: var(--turquoise); }
+.lead { max-width: 650px; font-size: 1.25rem; color: var(--muted); }
+.eyebrow { color: var(--mint); text-transform: uppercase; letter-spacing: .16em; font-weight: 700; }
+.actions { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 2rem; }
+.button { text-decoration: none; border: 1px solid #ffffff33; padding: .8rem 1.15rem; border-radius: 999px; }
+.button.primary { background: var(--mint); color: #07120e; border-color: var(--mint); font-weight: 700; }
+main { width: min(1180px, calc(100% - 2rem)); margin: auto; }
+section { padding: 5rem 0; }
+.cards, .game-grid, .split { display: grid; gap: 1rem; }
+.cards { grid-template-columns: repeat(4, 1fr); padding-top: 0; }
+.cards article, .game-grid article, .split > div {
+  background: linear-gradient(145deg, #171c35, #101326);
+  border: 1px solid #ffffff16;
+  border-radius: 22px;
+  padding: 1.5rem;
+}
+.cards strong { display: block; color: var(--lavender); font-size: 2.1rem; }
+.cards span, .game-grid p, li, footer { color: var(--muted); }
+.game-grid { grid-template-columns: repeat(2, 1fr); }
+.split { grid-template-columns: repeat(2, 1fr); }
+li { margin: .7rem 0; }
+footer { text-align: center; padding: 3rem 1rem 5rem; }
+@media (max-width: 760px) {
+  .hero, .cards, .game-grid, .split { grid-template-columns: 1fr; }
+  .hero { padding-top: 3rem; }
+  .cards { padding-top: 2rem; }
+}

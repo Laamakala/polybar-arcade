@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Polybar Arcade, a Raspberry Pi Pico W arcade controller with illuminated frets, strum controls, TFT menus, and reaction games.">
+  <title>Polybar Arcade</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">RP2040 · C++ · Wokwi</p>
+      <h1>Polybar Arcade</h1>
+      <p class="lead">A compact fret-and-strum arcade built around illuminated controls, twin buzzers, TFT menus, reaction games, and player leaderboards.</p>
+      <div class="actions">
+        <a class="button primary" href="../">View source</a>
+        <a class="button" href="#games">Explore games</a>
+      </div>
+    </div>
+    <img src="assets/polybar-arcade.png" alt="Polybar Arcade Wokwi hardware layout">
+  </header>
+
+  <main>
+    <section class="cards" aria-label="Project highlights">
+      <article><strong>5</strong><span>illuminated frets</span></article>
+      <article><strong>2</strong><span>strum directions</span></article>
+      <article><strong>4</strong><span>arcade games</span></article>
+      <article><strong>Top 4</strong><span>scores per difficulty</span></article>
+    </section>
+
+    <section id="games">
+      <p class="eyebrow">Game collection</p>
+      <h2>Built for fast hands and questionable reflexes</h2>
+      <div class="game-grid">
+        <article><h3>Speedtest</h3><p>Follow accelerating cues using fret buttons and the strum control.</p></article>
+        <article><h3>Simon Says</h3><p>Repeat longer and longer fret sequences across five difficulty levels.</p></article>
+        <article><h3>Reaction</h3><p>Wait for the cue, react quickly, and avoid a TOO FAST penalty.</p></article>
+        <article><h3>Solo Jam</h3><p>Use the fret controls to play minor, major, and blues note layouts.</p></article>
+      </div>
+    </section>
+
+    <section class="split">
+      <div>
+        <p class="eyebrow">Hardware</p>
+        <h2>Guitar-controller ideas in a tiny arcade</h2>
+        <ul>
+          <li>Raspberry Pi Pico W / RP2040</li>
+          <li>Five fret buttons and LEDs</li>
+          <li>Two-direction strum control and LEDs</li>
+          <li>Two buzzers for notes and effects</li>
+          <li>ILI9341 in simulation, 160 x 80 ST7735 planned for hardware</li>
+        </ul>
+      </div>
+      <div>
+        <p class="eyebrow">Firmware</p>
+        <h2>Menus, modes, and memorable names</h2>
+        <ul>
+          <li>State-driven menus and game screens</li>
+          <li>Normal and no-light challenge categories</li>
+          <li>Four-character printable ASCII initials</li>
+          <li>Top-four leaderboards for each difficulty</li>
+          <li>Blues-inspired startup melody and boot-time mute</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Next steps</p>
+      <h2>Roadmap</h2>
+      <p>Persistent flash storage, joystick and whammy support, Start and Select buttons, more rhythm games, and a modular multi-file firmware architecture.</p>
+    </section>
+  </main>
+
+  <footer>Polybar Arcade · Built with Raspberry Pi Pico W, PlatformIO, Adafruit GFX, and Wokwi.</footer>
+</body>
+</html>
