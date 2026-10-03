@@ -1325,10 +1325,10 @@ void waitForGreenPress() {
 
 // Reaction game: turn off all fret LEDs
 void turnOffAllInputLights() {
-  for (int i= 0; i < 5; i++) {
+  for (int i= 0; i < FRET_COUNT; i++) {
     digitalWrite(LED_PINS[i], LOW);
   }
-  for (int i= 0; i < 2; i++) {
+  for (int i= 0; i < STRUM_LED_COUNT; i++) {
     digitalWrite(LED_STRUM_PINS[i], LOW);
   }
 }
@@ -3281,7 +3281,7 @@ void playStartupFretSequence() {
   }
 
   // Make sure both strum LEDs begin off
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
     digitalWrite(LED_STRUM_PINS[i], LOW);
   }
 
