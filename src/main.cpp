@@ -1,114 +1,130 @@
-// ----- LIBRARIES ----- //
+// ----- 1. LIBRARIES ----- //
+
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h> // #include <Adafruit_ST7735.h>
 #include <SPI.h>
 
-// ----- PIN DEFINITIONS ----- //
-#define TFT_CS 17
-#define TFT_DC 16
-#define TFT_RST 20
-
-// ----- SCREEN DIMENSIONS
-#define SCREEN_WIDTH 160
-#define SCREEN_HEIGHT 80
-
 // ----- FLASH STORAGE ----- //
+
 #include <stddef.h>
 #include <stdio.h>
-#include <string>
-
+#include <string.h>
 // Reserve 64 KB of onboard flash for LittleFS
 #define RP2040_FS_SIZE_KB 64
-
 // Do not erase saved scores automatically
 #define FORCE_REFORMAT false
-
 #include <LittleFS_Mbed_RP2040.h>
 
-// ----- HARDWARE OBJECTS ----- //
-Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
+// ----- 2. GLOBAL CONSTANT HELPERS ----- //
 
-// ----- THEME COLORS ----- // 
+constexpr int FRET_COUNT = 5;
+constexpr int STRUM_LED_COUNT = 2;
+constexpr int REACTION_ROUNDS = 3;
+constexpr int TOP_SCORE_COUNT = 4;
+constexpr int INITIAL_COUNT = 4;
+constexpr int MAX_DIFFICULTIES = 5;
+constexpr int STRUM_INPUT_INDEX = FRET_COUNT;
+constexpr int FRET_AND_STRUM_INPUT_COUNT = FRET_COUNT + 1;
+
+constexpr int SCREEN_WIDTH = 160;
+constexpr int SCREEN_HEIGHT = 80;
+
+constexpr int SPEEDTEST_COUNT = 4;
+constexpr int SIMONSAYS_COUNT = 5;
+constexpr int REACTION_COUNT = 2;
+constexpr int SOLO_COUNT = 3;
+constexpr int MAIN_MENU_COUNT = 4;
+
+constexpr int MAX_TARGET_QUEUE = 60;
+constexpr int MAX_MUSIC_NOTES = 10;
+constexpr int VISIBLE_MENU_ROWS = 4;
+
+constexpr unsigned long MENU_COOLDOWN = 50;
+
+// ----- 3. PIN DEFINITIONS ----- //
+
+constexpr uint8_t TFT_CS = 17;
+constexpr uint8_t TFT_DC = 16;
+constexpr uint8_t TFT_RST = 20;
+
+constexpr uint8_t BUTTON_PINS[FRET_COUNT] = {
+  1,  // Green
+  3,  // Red
+  5,  // Yellow
+  7,  // Blue
+  9   // Orange
+};
+
+constexpr uint8_t LED_PINS[FRET_COUNT] = {
+  2,   // Green
+  4,   // Red
+  6,   // Yellow
+  8,   // Blue
+  10   // Orange
+};
+
+constexpr uint8_t STRUM_UP_PIN = 27;
+constexpr uint8_t STRUM_DOWN_PIN = 28;
+
+constexpr uint8_t LED_STRUM_PINS[STRUM_LED_COUNT] = {
+  22,  // Cyan, strum up
+  21   // Violet, strum down
+};
+
+constexpr uint8_t NOTE_BUZZER = 15;
+constexpr uint8_t FX_BUZZER = 26;
+
+// ----- 4. HARDWARE OBJECTS ----- //
+
+Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
+LittleFS_MBED* scoreFileSystem = nullptr;
+
+// ----- 5. THEME COLORS ----- // 
+
+// CUSTOM COLOR PALETTE //
+const uint16_t COLOR_TURQUOISE = tft.color565(64, 224, 208);
+const uint16_t COLOR_MINT = tft.color565(100, 255, 190);
+const uint16_t COLOR_SALMON_PINK = 0xFE19;
+const uint16_t COLOR_PASTEL_YELLOW = tft.color565(255, 240, 150);
+const uint16_t COLOR_LAVENDER = tft.color565(190, 140, 255);
+const uint16_t COLOR_CREAM_YELLOW = tft.color565(255, 245, 180);
+
 // Boot
 const uint16_t COLOR_BG      = ILI9341_BLACK;               // background color     // Black
-const uint16_t COLOR_START1  = 0xFE19;                // screen start color1  // Pink
+const uint16_t COLOR_START1  = COLOR_SALMON_PINK;                      // screen start color1  // Pink
 const uint16_t COLOR_START2  = tft.color565(100, 255, 190); // screen start color2  // Mint green
 const uint16_t COLOR_START3  = ILI9341_CYAN;                // screen start color3  // Cyan
 
-const uint16_t COLOR_SPLASH1  = tft.color565(64, 224, 208);;  // splash screen title1 color // Turqoiuse
-const uint16_t COLOR_SPLASH2  = 0xFE19;                 // splash screen title2 color // Pink
-const uint16_t COLOR_SPLASH3  = tft.color565(64, 224, 208);;  // splash screen title3 color // Turqoiuse
+const uint16_t COLOR_SPLASH1  = tft.color565(64, 224, 208);  // splash screen title1 color // Turqoiuse
+const uint16_t COLOR_SPLASH2  = COLOR_SALMON_PINK;                      // splash screen title2 color // Pink
+const uint16_t COLOR_SPLASH3  = tft.color565(64, 224, 208);  // splash screen title3 color // Turqoiuse
 
 // text colors
 const uint16_t COLOR_SELECT   = tft.color565(100, 255, 190);  // Menu selected text highlight color // Mint green
-const uint16_t COLOR_BACK   = tft.color565(255, 105, 125);    // Menu BACK color // Red pastel
+const uint16_t COLOR_BACK     = tft.color565(255, 105, 125);    // Menu BACK color // Red pastel
 const uint16_t COLOR_TEXT     = tft.color565(255, 245, 180);  // Normal text color in menus         // Pale creamy yellow
 
+const uint16_t COLOR_NORMAL_HS = tft.color565(79, 200, 175);  // normal mode highscores // sea-green
+const uint16_t COLOR_GAME_OVER  = tft.color565(128, 0, 128);  // "GAME OVER" text
+
 // Game title colors
-const uint16_t COLOR_SPEEDTEST = 0xFE19;    // ILI9341_RED;     // speedtest title
-const uint16_t COLOR_SIMON     = ILI9341_YELLOW;  // simon says title
+const uint16_t COLOR_SPEEDTEST = COLOR_SALMON_PINK;          // pastel pink speedtest title
+const uint16_t COLOR_SIMON     = tft.color565(190, 140, 255);;  // lavender yellow simon says title
 const uint16_t COLOR_REACTION  = ILI9341_CYAN;    // reaction title
 const uint16_t COLOR_SOLO      = ILI9341_MAGENTA; // solo title
-
-const uint16_t COLOR_NORMAL_HS = tft.color565(79, 200, 175);  // normal mode highscores // sea-green
-const uint16_t COLOR_LIGHT_HS  = tft.color565(0, 255, 255);    // onlylight mode highscores // Cyan
-const uint16_t COLOR_SOUND_HS  = tft.color565(255, 165, 0);  // onlysound mode highscores // Orange
-const uint16_t COLOR_GAME_OVER  = tft.color565(128, 0, 128);  // "GAME OVER" text
 
 const uint16_t COLOR_SUCCESS  = ILI9341_ORANGE; // new high score color
 const uint16_t COLOR_ERROR    = ILI9341_RED;    // game over color
 
-
+// Fret LED colors
 const uint16_t COLOR_FRET1    = ILI9341_GREEN;  // Fret1: green
 const uint16_t COLOR_FRET2    = ILI9341_RED;    // Fret2: red
 const uint16_t COLOR_FRET3    = ILI9341_YELLOW; // Fret3: yellow
 const uint16_t COLOR_FRET4    = ILI9341_BLUE;   // Fret4: blue
 const uint16_t COLOR_FRET5    = ILI9341_ORANGE; // Fret5: orange
 
-const uint16_t COLOR_TURQUOISE = tft.color565(64, 224, 208); // Turquoise - blue
-const uint16_t COLOR_MINT = tft.color565(100, 255, 190);     // Mint - green
-const uint16_t COLOR_LAVENDER = tft.color565(190, 140, 255); // Lavender - violet or #a86cce
-const uint16_t COLOR_CORAL = 0xF0AC29;    // Coral - #df9b1c
-// Pale creamy yellow
-const uint16_t COLOR_CREAM_YELLOW = tft.color565(255, 245, 180);
-const uint16_t COLOR_PASTEL_YELLOW = tft.color565(255, 240, 150);
-
-// ----- HARDWARE PIN ARRAYS ----- //
-
-// 5 Fret buttons
-const int BUTTON_PINS[5] = {
-  1, // Green
-  3, // Red
-  5, // Yellow
-  7, // Blue
-  9  // Orange
-};
-
-// 5 Fret setup
-const int LED_PINS[5] = {
-  2, // Green
-  4, // Red
-  6, // Yellow
-  8, // Blue
-  10  // Orange
-};
-
-// 2 Strum setup
-const int STRUM_UP_PIN = 27;
-const int STRUM_DOWN_PIN = 28;
-
-// 2 Strum LEDs
-const int LED_STRUM_PINS[2] {
-  22, // Cyan, strum up
-  21  // Violet, strum down
-};
-
-// 2 Buzzer setup
-const int NOTE_BUZZER = 15;
-const int FX_BUZZER = 26;
-
-// ----- MUSIC NOTE FREQUENCIES ----- //
+// ----- 6. MUSIC NOTE FREQUENCIES ----- //
 
 // Notes for solo game, minor
 const int SOLO_MINOR[6][5] = {
@@ -191,76 +207,6 @@ const int MENU_SCALE_3[3] = {
     311 // Eb
 };
 
-// Global constant helpers
-constexpr int FRET_COUNT = 5;
-constexpr int STRUM_LED_COUNT = 2;
-constexpr int REACTION_ROUNDS = 3;
-constexpr int TOP_SCORE_COUNT = 4;
-constexpr int INITIAL_COUNT = 4;
-constexpr int MAX_DIFFICULTIES = 5;
-
-// ----- GAME DIFFICULTY MENU TRACKING ----- //
-
-// speedtest game difficulty menu index
-int speedtestIndex = 0;
-const int SPEEDTEST_COUNT = 4;
-
-// simonsays game difficulty menu index
-int simonIndex = 0;
-const int SIMONSAYS_COUNT = 5;
-
-// reaction game difficulty menu index
-int reactionIndex = 0;
-const int REACTION_COUNT = 2;
-
-// solo game difficulty menu index
-int soloIndex = 0;
-const int SOLO_COUNT = 3;
-
-// Main menu setup
-int mainMenuIndex = 0;
-const int MAIN_MENU_COUNT = 4;
-
-// ----- MENU OPTIONS ----- //
-
-// Game menu options
-const char* mainMenuOptions[MAIN_MENU_COUNT] = {
-  "spedetest",
-  "simon says",
-  "r3action",
-  "solo-jam"
-};
-
-// speedtest menu difficulty options
-const char* speedtestOptions[SPEEDTEST_COUNT] = {
-  "3Fs",
-  "4Fs",
-  "5Fs",
-  "all"
-};
-
-// SimonSays menu difficulty options
-const char* simonOptions[SIMONSAYS_COUNT] = {
-  "2Fs",
-  "3Fs",
-  "4Fs",
-  "5Fs",
-  "strum"
-};
-
-// Reaction menu difficulty options
-const char* reactionOptions[REACTION_COUNT] = {
-  "simpl",
-  "chaos"
-};
-
-// solo menu difficulty options
-const char* soloOptions[SOLO_COUNT] = {
-  "minor",
-  "major",
-  "blues"
-};
-
 // solo root note names
 const char* ROOT_NAMES[6] = {
   "G2",
@@ -271,7 +217,30 @@ const char* ROOT_NAMES[6] = {
   "D6"
 };
 
-// ----- STRUCTURES AND ENUMS *LEADERBOARD TRACKING AND SAVING* ----- //
+// ----- 7. ENUMS ----- //
+
+// Game state setup tracking
+enum AppState {
+  STATE_SPLASH,
+  STATE_MAIN_MENU,
+  STATE_SPEEDTEST_MENU,
+  STATE_SIMON_MENU,
+  STATE_REACTION_MENU,
+  STATE_SOLO_MENU,
+  STATE_PLAYING,
+  STATE_GAMEOVER,
+  STATE_ENTER_INITIALS
+};
+
+// Game type tracking
+enum GameType {
+  GAME_SPEEDTEST,
+  GAME_SIMON,
+  GAME_REACTION,
+  GAME_SOLO
+};
+
+// ----- 8. STRUCTURES ----- //
 
 // High score tracking variables & constants
 struct HighScores {
@@ -279,63 +248,16 @@ struct HighScores {
   int noLight[MAX_DIFFICULTIES][TOP_SCORE_COUNT];
 };
 
-const uint32_t SCORE_FILE_MAGIC = 0x50424152;
-// ASCII-like identifier for "PBAR"
-
-const uint16_t SCORE_FILE_VERSION = 1;
-
-const char SCORE_FILE_PATH[] =
-  MBED_LITTLEFS_FILE_PREFIX "/polybar_scores.bin";
-
-// Initials for Speedtest normal mode
-char speedNormalInitials
-  [MAX_DIFFICULTIES]
-  [TOP_SCORE_COUNT]
-  [INITIAL_COUNT + 1];
-
-// Initials for Speedtest no-light mode
-char speedNoLightInitials
-  [MAX_DIFFICULTIES]
-  [TOP_SCORE_COUNT]
-  [INITIAL_COUNT + 1];
-
-// Initials for Simon normal mode
-char simonNormalInitials
-  [MAX_DIFFICULTIES]
-  [TOP_SCORE_COUNT]
-  [INITIAL_COUNT + 1];
-
-// Initials for Simon no-light mode
-char simonNoLightInitials
-  [MAX_DIFFICULTIES]
-  [TOP_SCORE_COUNT]
-  [INITIAL_COUNT + 1];
-
-// Initials for Reaction normal mode
-char reactionNormalInitials
-  [MAX_DIFFICULTIES]
-  [TOP_SCORE_COUNT]
-  [INITIAL_COUNT + 1];
-
-// Initials for Reaction no-light mode
-char reactionNoLightInitials
-  [MAX_DIFFICULTIES]
-  [TOP_SCORE_COUNT]
-  [INITIAL_COUNT + 1];
-
-// Initials currently being edited
-char enteredInitials[INITIAL_COUNT + 1] = {
-  'A', 'A', 'A', 'A', '\0'
+// Music note variables
+struct MusicNote {
+  int x;
+  int y;
+  bool active;
+  int noteType;    // fret color
+  int symbolIndex; // visual shape
 };
 
-int initialsPosition = 0;
-int initialsCharacter = 'A';
-
-// Points to the initials slot being edited
-char* pendingInitials = nullptr;
-
 struct ScoreSaveData {
-
   uint32_t magic;
   uint16_t version;
   uint16_t dataSize;
@@ -382,13 +304,295 @@ struct ScoreSaveData {
   uint32_t checksum;
 };
 
-// High score instances
-HighScores speedHS;
-HighScores simonHS;
-HighScores reactionHS;
-HighScores soloHS;
+// ----- 9. FLASH STORAGE CONSTANTS ----- //
 
-// Rolling scrolling for every menu
+constexpr uint32_t SCORE_FILE_MAGIC = 0x50424152;
+
+constexpr uint16_t SCORE_FILE_VERSION = 1;
+
+const char SCORE_FILE_PATH[] =
+  MBED_LITTLEFS_FILE_PREFIX "/polybar_scores.bin";
+
+// ----- 10. MENU OPTIONS ----- //
+
+// Game menu options
+const char* mainMenuOptions[MAIN_MENU_COUNT] = {
+  "speedtest",
+  "simon says",
+  "r3action",
+  "solo-jam"
+};
+
+// speedtest menu difficulty options
+const char* speedtestOptions[SPEEDTEST_COUNT] = {
+  "3Fs",
+  "4Fs",
+  "5Fs",
+  "all"
+};
+
+// SimonSays menu difficulty options
+const char* simonOptions[SIMONSAYS_COUNT] = {
+  "2Fs",
+  "3Fs",
+  "4Fs",
+  "5Fs",
+  "strum"
+};
+
+// Reaction menu difficulty options
+const char* reactionOptions[REACTION_COUNT] = {
+  "simpl",
+  "chaos"
+};
+
+// solo menu difficulty options
+const char* soloOptions[SOLO_COUNT] = {
+  "minor",
+  "major",
+  "blues"
+};
+
+// ----- 11. GLOBAL VARIABLES ----- //
+
+  // ----- APPLICATION STATE ----- //
+
+  // Current and previous state tracking
+AppState currentState = STATE_SPLASH;
+AppState previousState = STATE_SPLASH;
+
+  // Default gametype at boot
+GameType currentGame = GAME_SPEEDTEST;
+
+  // ----- USER AND GAME SETTINGS ----- //
+
+bool soundEnabled = true;
+bool useLight = true;
+bool useSound = true;
+
+  // ----- MENU INDEXES ----- //
+
+int mainMenuIndex = 0;
+int speedtestIndex = 0;
+int simonIndex = 0;
+int reactionIndex = 0;
+int soloIndex = 0;
+
+  // ----- LEADERBOARD SCREEN STATE ----- //
+
+bool speedLeaderboardOpen = false;
+bool simonLeaderboardOpen = false;
+bool reactionLeaderboardOpen = false;
+
+  // ----- GAME RUNTIME VARIABLES ----- //
+
+int numInputs = 0;
+
+int targetQueue[MAX_TARGET_QUEUE] = {};
+int queueSize = 0;
+
+int lastScore = 0;
+int soloRoot = 3;
+
+bool newHighScore = false;
+bool reactionRequireCorrectFret = false;
+
+  // ----- SOLO ANIMATION STATE ----- //
+
+MusicNote notes[MAX_MUSIC_NOTES] = {};
+int activeNotes = 0;
+
+  // ----- INITIALS ENTRY STATE ----- //
+
+char speedNormalInitials
+  [MAX_DIFFICULTIES]
+  [TOP_SCORE_COUNT]
+  [INITIAL_COUNT + 1] = {};
+
+char speedNoLightInitials
+  [MAX_DIFFICULTIES]
+  [TOP_SCORE_COUNT]
+  [INITIAL_COUNT + 1] = {};
+
+char simonNormalInitials
+  [MAX_DIFFICULTIES]
+  [TOP_SCORE_COUNT]
+  [INITIAL_COUNT + 1] = {};
+
+char simonNoLightInitials
+  [MAX_DIFFICULTIES]
+  [TOP_SCORE_COUNT]
+  [INITIAL_COUNT + 1] = {};
+
+char reactionNormalInitials
+  [MAX_DIFFICULTIES]
+  [TOP_SCORE_COUNT]
+  [INITIAL_COUNT + 1] = {};
+
+char reactionNoLightInitials
+  [MAX_DIFFICULTIES]
+  [TOP_SCORE_COUNT]
+  [INITIAL_COUNT + 1] = {};
+
+char enteredInitials[INITIAL_COUNT + 1] = {
+  'A', 'A', 'A', 'A', '\0'
+};
+
+int initialsPosition = 0;
+int initialsCharacter = 'A';
+
+char* pendingInitials = nullptr;
+
+  // ----- HIGHSCORE STATE ----- //
+
+HighScores speedHS = {};
+HighScores simonHS = {};
+HighScores reactionHS = {};
+
+bool scoreStorageReady = false;
+
+  // ----- INPUT EDGE STATE ----- //
+
+bool lastGreen = HIGH;
+bool lastRed = HIGH;
+bool lastYellow = HIGH;
+bool lastBlue = HIGH;
+bool lastOrange = HIGH;
+
+bool lastStrumUp = HIGH;
+bool lastStrumDown = HIGH;
+
+unsigned long lastMenuInput = 0;
+
+  /*/ Music notes for different frets
+const char* symbols[5] = {
+    "♪",
+    "♫",
+    "♩",
+    "♬",
+    "♭"
+};*/
+
+// ----- 12. FUNCTION PROTOTYPES ----- //
+
+ // A. GENERIC UTILITIES //
+
+int getFirstVisibleItem(
+  int selectedIndex,
+  int itemCount,
+  int visibleRows
+);
+
+  // B. INPUT //
+bool menuReady();
+bool greenPressed();
+bool redPressed();
+bool yellowPressed();
+bool bluePressed();
+bool orangePressed();
+bool strumUpPressed();
+bool strumDownPressed();
+
+  // C. LEDs and HARDWARE //
+void updateMenuLEDs();
+void turnOffAllInputLights();
+void playStartupFretSequence();
+void waitForGreenPress();
+
+  // D. SOUND //
+void playTone(int buzzerPin, unsigned int frequency, unsigned long duration);
+void playSelectSound();
+void playBackSound();
+void playNavUpSound();
+void playNavDownSound();
+void playGameOverSound();
+void playVictorySound();
+
+  // E. FLASH STORAGE //
+uint32_t calculateScoreChecksum(
+  const ScoreSaveData& data
+);
+bool initializeScoreStorage();
+bool loadHighScores();
+bool saveHighScores();
+void resetHighScores();
+
+  // F. LEADERBOARD UTILITY PROTOTYPES //
+int insertTopScore(
+  int scores[TOP_SCORE_COUNT],
+  int newScore
+);
+
+int insertTopReactionTime(
+  int scores[TOP_SCORE_COUNT],
+  int newTime
+);
+
+void prepareInitialsSlot(
+  char initials[TOP_SCORE_COUNT][INITIAL_COUNT + 1],
+  int position
+);
+
+  // G. GENERAL SCREENS //
+void drawSplashScreen();
+void drawMainMenu();
+void drawMenuControls();
+void drawPlayingScreen(int score);
+void drawGameOverScreen(int score);
+
+  // H. MENUS //
+void drawSpeedtestMenu();
+void drawSimonMenu();
+void drawReactionMenu();
+void drawSoloMenu();
+
+void updateMainMenu();
+void updateSpeedtestMenu();
+void updateSimonMenu();
+void updateReactionMenu();
+void updateSoloMenu();
+
+  // I. LEADERBOARDS //
+void drawSpeedLeaderboard();
+void drawSimonLeaderboard();
+void drawReactionLeaderboard();
+
+  // J. INITIALS FOR LEADERBOARDS //
+void startInitialsEntry();
+void drawInitialsEntry();
+void updateInitialsEntry();
+
+  // K. DIFFICULTY //
+void configureSpeedtestDifficulty();
+void configureSimonsaysDifficulty();
+void configureReactionDifficulty();
+
+  // L. REACTION HELPERS //
+void drawReactionWaitScreen();
+void drawReactionGoScreen();
+void drawReactionTimeScreen(unsigned long reaction);
+void startReactionCue(int targetFret);
+// void drawTooEarlyScreen();
+
+  // M. SOLO HELPERS //
+void spawnNote(int fret);
+void drawNotes();
+void updateNotes();
+void cleanupNotes();
+void drawSoloRoot();
+void drawSoloPlayingScreen();
+
+  // N. GAMES //
+void runSpeedtestGame();
+void runSimonsaysGame();
+void runReactionGame();
+void runSoloGame();
+
+
+// ----- 13. FUNCTION DEFINITIONS ----- //
+
+  // A. GENERIC UTILITY FUNCTIONS //
+
 int getFirstVisibleItem(
   int selectedIndex,
   int itemCount,
@@ -415,221 +619,8 @@ int getFirstVisibleItem(
   return firstVisible;
 }
 
+  // B. INPUT FUNCTIONS //
 
-// Music note variables
-struct MusicNote {
-  int x;
-  int y;
-  bool active;
-  int noteType;    // fret color
-  int symbolIndex; // visual shape
-};
-
-// Game state setup tracking
-enum AppState {
-  STATE_SPLASH,
-  STATE_MAIN_MENU,
-  STATE_SPEEDTEST_MENU,
-  STATE_SIMON_MENU,
-  STATE_REACTION_MENU,
-  STATE_SOLO_MENU,
-  STATE_PLAYING,
-  STATE_GAMEOVER,
-  STATE_ENTER_INITIALS
-};
-
-// Game type tracking
-enum GameType {
-  GAME_SPEEDTEST,
-  GAME_SIMON,
-  GAME_REACTION,
-  GAME_SOLO
-};
-
-// ----- GLOBAL STATE VARIABLES ----- //
-
-// Current and previous state tracking
-AppState currentState = STATE_SPLASH;
-AppState previousState = STATE_SPLASH;
-
-// Default gametype at boot
-GameType currentGame = GAME_SPEEDTEST;
-
-// Game state variables
-int numInputs = 0;
-int targetQueue[60];
-int queueSize = 0;
-int lastScore = 0;
-int soloRoot  = 3;
-
-MusicNote notes[10];
-int activeNotes = 0;
-
-  /*/ Music notes for different frets
-const char* symbols[5] = {
-    "♪",
-    "♫",
-    "♩",
-    "♬",
-    "♭"
-};*/
-
-// ----- FUNCTION PROTOTYPES ----- //
-
-// Game functions
-void runSpeedtestGame();
-void runSimonsaysGame();
-void runReactionGame();
-void runSoloGame();
-
-// Drawing game menus
-void drawSplashScreen();
-void drawMainMenu();
-void drawSpeedtestMenu();
-void drawSimonMenu();
-void drawReactionMenu();
-void drawSoloMenu();
-void drawMenuControls();
-
-// Drawing game screens
-void drawSoloRoot();
-void drawSoloPlayingScreen();
-
-void drawPlayingScreen(int score);
-void drawGameOverScreen(int score);
-
-void drawReactionWaitScreen();
-void drawReactionGoScreen();
-void drawReactionTimeScreen(unsigned long reaction);
-void drawTooEarlyScreen();
-
-// Drawing Leaderboard screens
-void drawSpeedLeaderboard();
-void drawSimonLeaderboard();
-void drawReactionLeaderboard();
-void startInitialsEntry();
-void drawInitialsEntry();
-void updateInitialsEntry();
-
-void prepareInitialsSlot(
-  char initials[TOP_SCORE_COUNT][INITIAL_COUNT + 1],
-  int position
-);
-
-// Update functions
-void updateMainMenu();
-void updateSpeedtestMenu();
-void updateSimonMenu();
-void updateReactionMenu();
-void updateSoloMenu();
-
-// Hardware helpers
-void playStartupFretSequence();
-void startReactionCue(int targetFret);
-void waitForGreenPress();
-void turnOffAllInputLights();
-void updateMenuLEDs();
-void playTone(int buzzerPin, unsigned int frequency, unsigned long duration);
-
-// Configuration helpers
-void configureSpeedtestDifficulty();
-void configureSimonsaysDifficulty();
-void configureReactionDifficulty();
-
-// Input helpers
-bool menuReady();
-bool greenPressed();
-bool redPressed();
-bool yellowPressed();
-bool bluePressed();
-bool orangePressed();
-bool strumUpPressed();
-bool strumDownPressed();
-bool menuReady();
-
-// HIGHSCORE SAVING, LOADING & RESETTING
-uint32_t calculateScoreChecksum(
-  const ScoreSaveData& data
-);
-
-bool initializeScoreStorage();
-bool loadHighScores();
-bool saveHighScores();
-void resetHighScores();
-
-// ----- GLOBAL STATE VARIABLES ----- //
-
-// Game fret light and sound start state
-bool useLight = true;
-bool useSound = true;
-bool newHighScore = false;
-
-// Buttons start not pressed
-bool lastUp = HIGH;
-bool lastDown = HIGH;
-bool lastGreen = HIGH;
-bool lastRed = HIGH;
-bool lastYellow = HIGH;
-bool lastBlue = HIGH;
-bool lastOrange = HIGH;
-bool lastStrumUp = HIGH;
-bool lastStrumDown = HIGH;
-bool reactionRequireCorrectFret = false;
-
-// Global function to insert a new score into the top scores array
-int insertTopScore(
-  int scores[TOP_SCORE_COUNT],
-  int newScore
-);
-
-bool insertTopReactionTime(
-  int scores[TOP_SCORE_COUNT],
-  int newTime
-) {
-  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
-
-    // Zero means the position is empty.
-    // Otherwise, a lower reaction time is better.
-    if (
-      scores[i] == 0 ||
-      newTime < scores[i]
-    ) {
-
-      for (
-        int j = TOP_SCORE_COUNT - 1;
-        j > i;
-        j--
-      ) {
-        scores[j] = scores[j - 1];
-      }
-
-      scores[i] = newTime;
-      return true;
-    }
-  }
-
-  return false;
-}
-
-// Global filesystem for leaderboards
-LittleFS_MBED* scoreFileSystem = nullptr;
-
-bool scoreStorageReady = false;
-
-// Global function to insert a new reaction time into the top reaction times array
-bool insertTopReactionTime(
-  int scores[TOP_SCORE_COUNT],
-  int newTime
-);
-
-// Global key-press cooldown
-unsigned long lastMenuInput = 0;
-const unsigned long MENU_COOLDOWN = 50;
-unsigned long reactionTimes[5];
-
-// ----- FUNCTION DEFINITIONS ----- //
-
-// cooldown after select or back
 bool menuReady() {
   if (millis() - lastMenuInput < MENU_COOLDOWN) {
     return false;
@@ -638,7 +629,6 @@ bool menuReady() {
   return true;
 }
 
-// Global Green helper
 bool greenPressed() {
   bool green = digitalRead(BUTTON_PINS[0]);
   bool pressed =
@@ -649,7 +639,6 @@ bool greenPressed() {
   return pressed;
 }
 
-// Global Red helper
 bool redPressed() {
   bool red = digitalRead(BUTTON_PINS[1]);
   bool pressed =
@@ -660,7 +649,6 @@ bool redPressed() {
   return pressed;
 }
 
-// Global Yellow helper
 bool yellowPressed() {
   bool yellow = digitalRead(BUTTON_PINS[2]);
   bool pressed =
@@ -671,7 +659,6 @@ bool yellowPressed() {
   return pressed;
 }
 
-// Global Blue helper
 bool bluePressed() {
   bool blue = digitalRead(BUTTON_PINS[3]);
   bool pressed =
@@ -682,7 +669,6 @@ bool bluePressed() {
   return pressed;
 }
 
-// Global Orange helper
 bool orangePressed() {
   bool orange = digitalRead(BUTTON_PINS[4]);
   bool pressed =
@@ -693,7 +679,6 @@ bool orangePressed() {
   return pressed;
 }
 
-// Global strumUp helper
 bool strumUpPressed() {
   bool strumUp = digitalRead(STRUM_UP_PIN);
   bool pressed =
@@ -704,7 +689,6 @@ bool strumUpPressed() {
   return pressed;
 }
 
-// Global StrumDown helper
 bool strumDownPressed() {
   bool strumDown = digitalRead(STRUM_DOWN_PIN);
   bool pressed =
@@ -715,39 +699,269 @@ bool strumDownPressed() {
   return pressed;
 }
 
-bool soundEnabled = true;
+  // C. HARDWARE & LED FUNCTIONS //
 
-// Global sound enabled helper
-int insertTopScore(
-  int scores[TOP_SCORE_COUNT],
-  int newScore
-) {
-  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
-    if (newScore > scores[i]) {
-
-      // Move lower scores down
-      for (
-        int j = TOP_SCORE_COUNT - 1;
-        j > i;
-        j--
-      ) {
-        scores[j] = scores[j - 1];
-      }
-
-      scores[i] = newScore;
-      // Return leaderboard position: 0-3
-      return i;
-    }
+void turnOffAllInputLights() {
+  for (int i= 0; i < FRET_COUNT; i++) {
+    digitalWrite(LED_PINS[i], LOW);
   }
-  // Score did not reach top four
-  return -1;
+  for (int i= 0; i < STRUM_LED_COUNT; i++) {
+    digitalWrite(LED_STRUM_PINS[i], LOW);
+  }
 }
 
-// ----- This checksum helps detect an incomplete or damaged highscore save file: ---- //
-// Leaderboard open state helper
-bool speedLeaderboardOpen = false;
-bool simonLeaderboardOpen = false;
-bool reactionLeaderboardOpen = false;
+void updateMenuLEDs() {
+  
+  // Fret LEDs
+  for (int i = 0; i < FRET_COUNT; i++) {
+    digitalWrite(
+      LED_PINS[i],
+      digitalRead(BUTTON_PINS[i]) == LOW ? HIGH : LOW
+    );
+  }
+
+  // Strum-up LED
+  digitalWrite(
+    LED_STRUM_PINS[0],
+    digitalRead(STRUM_UP_PIN) == LOW ? HIGH : LOW
+  );
+
+  // Strum-down LED
+  digitalWrite(
+    LED_STRUM_PINS[1],
+    digitalRead(STRUM_DOWN_PIN) == LOW ? HIGH : LOW
+  );
+}
+
+void waitForGreenPress() {
+
+    // release
+    while (digitalRead(BUTTON_PINS[0]) == LOW)
+        delay(1);
+
+    // press
+    while (digitalRead(BUTTON_PINS[0]) == HIGH)
+        delay(1);
+
+    // release again
+    while (digitalRead(BUTTON_PINS[0]) == LOW)
+        delay(1);
+}
+
+void playStartupFretSequence() {
+
+  // Make sure all fret LEDs begin off
+  for (int i = 0; i < FRET_COUNT; i++) {
+    digitalWrite(LED_PINS[i], LOW);
+  }
+
+  // Make sure both strum LEDs begin off
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
+    digitalWrite(LED_STRUM_PINS[i], LOW);
+  }
+
+  // Blues-style note lengths
+  const int noteLengths[FRET_COUNT] = {
+    180, // Green: medium
+    50, // Red: short
+    210, // Yellow: long
+    100, // Blue: short
+    280 // Orange: long ending
+  };
+
+  // Delay after each LED/note
+  const int noteGaps[FRET_COUNT] = {
+    20,
+    40,
+    25,
+    60,
+    30
+  };
+
+  // Light fret LEDs one by one
+  for (int i = 0; i < FRET_COUNT; i++) {
+    // Check for Green + Orange held during startup -> mute sounds
+    if (
+      digitalRead(BUTTON_PINS[0]) == LOW &&
+      digitalRead(BUTTON_PINS[4]) == LOW  
+    ) { 
+      soundEnabled = false;
+      
+      noTone(NOTE_BUZZER);
+      noTone(FX_BUZZER);
+    }
+  
+      digitalWrite(LED_PINS[i], HIGH);
+
+      playTone(
+        NOTE_BUZZER,
+        SOLO_BLUES[2][i],
+        noteLengths[i]
+      );
+  
+      delay(noteLengths[i]);
+      digitalWrite(LED_PINS[i], LOW);
+      delay(noteGaps[i]);
+  }
+
+  // Light strum-up LED
+  digitalWrite(LED_STRUM_PINS[0], HIGH);
+  playTone(NOTE_BUZZER, 587, 180);
+  delay(200);
+  digitalWrite(LED_STRUM_PINS[0], LOW);
+  delay(50);
+
+  // Light strum-down LED
+  digitalWrite(LED_STRUM_PINS[1], HIGH);
+  playTone(NOTE_BUZZER, 698, 180);
+  delay(200);
+  digitalWrite(LED_STRUM_PINS[1], LOW);
+  delay(50);
+
+  // Light all fret LEDs together
+  for (int i = 0; i < FRET_COUNT; i++) {
+    digitalWrite(LED_PINS[i], HIGH);
+  }
+
+  // Light both strum LEDs together
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
+    digitalWrite(LED_STRUM_PINS[i], HIGH);
+  }
+
+  // Finishing sound
+  playTone(FX_BUZZER, 440, 300);
+  playTone(NOTE_BUZZER, 587, 300);
+
+  delay(500);
+
+/* 
+  for (int i = 0; i <5; i++) {
+    playTone(FX_BUZZER, 500 - 70 * i, 16);
+    delay(12);
+  }
+*/
+
+  // Turn off all fret LEDs
+  for (int i = 0; i < FRET_COUNT; i++) {
+    digitalWrite(LED_PINS[i], LOW);
+  delay(50);
+  }
+
+  // Turn off both strum LEDs
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
+    digitalWrite(LED_STRUM_PINS[i], LOW);
+  }
+
+  noTone(FX_BUZZER);
+  noTone(NOTE_BUZZER);
+
+  while (digitalRead(BUTTON_PINS[0]) == LOW ||
+    digitalRead(BUTTON_PINS[1]) == LOW) {
+  delay(1);
+  }
+}
+
+  // D. SOUND FUNCTIONS //
+
+void playTone(
+  int buzzerPin,
+  unsigned int frequency,
+  unsigned long duration
+) {
+  if (!soundEnabled) {
+    return;
+  }
+
+  tone(
+    buzzerPin,
+    frequency,
+    duration
+  );
+}
+
+void playSelectSound() {
+  playTone(FX_BUZZER, 277, 16); // tone(FX_BUZZER, 330, 8); v1
+  delay(16);
+  playTone(FX_BUZZER, 370, 24); // tone(FX_BUZZER, 660, 8); v1
+}
+
+void playBackSound() {
+  playTone(FX_BUZZER, 349, 16); // tone(FX_BUZZER, 660, 8); v1
+  delay(16);
+  playTone(FX_BUZZER, 247, 24); // tone(FX_BUZZER, 330, 8); v1
+}
+
+// Navigate up sound // EDIT
+void playNavUpSound() {
+  playTone(FX_BUZZER, 330, 8);
+  delay(16);
+  playTone(NOTE_BUZZER, 300, 8);
+}
+
+// navigate down sound // EDIT
+void playNavDownSound() {
+  playTone(FX_BUZZER, 262, 8);
+  delay(32);
+  playTone(NOTE_BUZZER, 275, 8);
+}
+
+void playGameOverSound() {
+  playTone(FX_BUZZER, 220, 30);
+  playTone(NOTE_BUZZER, 180, 50);
+  delay(20);
+
+  playTone(FX_BUZZER, 120, 70);
+  playTone(NOTE_BUZZER, 100, 40);
+  delay(80);
+
+  noTone(FX_BUZZER);
+  noTone(NOTE_BUZZER);
+}
+
+void playVictorySound() {
+  playTone(FX_BUZZER, 523, 16);
+  delay(5);
+  playTone(FX_BUZZER, 659, 16);
+  delay(5);
+  playTone(FX_BUZZER, 784, 16);
+  delay(5);
+  playTone(FX_BUZZER, 1047, 50);
+  delay(60);
+  noTone(FX_BUZZER);
+}
+
+  // E. FLASH STORAGE //
+
+bool initializeScoreStorage() {
+
+  scoreFileSystem = new LittleFS_MBED();
+
+  if (scoreFileSystem == nullptr) {
+    Serial.println(
+      "ERROR: Could not create LittleFS object"
+    );
+
+    scoreStorageReady = false;
+    return false;
+  }
+
+  if (!scoreFileSystem->init()) {
+    Serial.println(
+      "ERROR: LittleFS mount failed"
+    );
+
+    scoreStorageReady = false;
+    return false;
+  }
+
+  scoreStorageReady = true;
+
+  Serial.println(
+    "LittleFS score storage ready"
+  );
+
+  return true;
+}
 
 uint32_t calculateScoreChecksum(
   const ScoreSaveData& data
@@ -811,39 +1025,6 @@ void resetHighScores() {
   );
 }
 
-// Flash initialization function
-bool initializeScoreStorage() {
-
-  scoreFileSystem = new LittleFS_MBED();
-
-  if (scoreFileSystem == nullptr) {
-    Serial.println(
-      "ERROR: Could not create LittleFS object"
-    );
-
-    scoreStorageReady = false;
-    return false;
-  }
-
-  if (!scoreFileSystem->init()) {
-    Serial.println(
-      "ERROR: LittleFS mount failed"
-    );
-
-    scoreStorageReady = false;
-    return false;
-  }
-
-  scoreStorageReady = true;
-
-  Serial.println(
-    "LittleFS score storage ready"
-  );
-
-  return true;
-}
-
-// Load Highscores
 bool loadHighScores() {
 
   if (!scoreStorageReady) {
@@ -985,7 +1166,6 @@ bool loadHighScores() {
   return true;
 }
 
-// Save Highscore
 bool saveHighScores() {
 
   if (!scoreStorageReady) {
@@ -1113,92 +1293,1153 @@ bool saveHighScores() {
   return true;
 }
 
-// ----- SOUND FUNCTIONS ----- //
+  // F. LEADERBOARD UTILITIES //
 
-// Global helper for playing tones with sound enabled check
-void playTone(
-  int buzzerPin,
-  unsigned int frequency,
-  unsigned long duration
+// Insert a higher-is-better score
+int insertTopScore(
+  int scores[TOP_SCORE_COUNT],
+  int newScore
 ) {
-  if (!soundEnabled) {
-    return;
+  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
+    if (newScore > scores[i]) {
+
+      // Move lower scores down
+      for (
+        int j = TOP_SCORE_COUNT - 1;
+        j > i;
+        j--
+      ) {
+        scores[j] = scores[j - 1];
+      }
+
+      scores[i] = newScore;
+      // Return leaderboard position: 0-3
+      return i;
+    }
+  }
+  // Score did not reach top four
+  return -1;
+}
+
+// Insert a lower-is-better reaction time
+int insertTopReactionTime(
+  int scores[TOP_SCORE_COUNT],
+  int newTime
+) {
+  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
+
+    // Zero means the position is empty.
+    // Otherwise, a lower reaction time is better.
+    if (
+      scores[i] == 0 ||
+      newTime < scores[i]
+    ) {
+
+      for (
+        int j = TOP_SCORE_COUNT - 1;
+        j > i;
+        j--
+      ) {
+        scores[j] = scores[j - 1];
+      }
+
+      scores[i] = newTime;
+      return i;
+    }
   }
 
-  tone(
-    buzzerPin,
-    frequency,
-    duration
+  return -1;
+}
+
+void prepareInitialsSlot(
+  char initials[TOP_SCORE_COUNT][INITIAL_COUNT + 1],
+  int position
+) {
+  // Move existing initials down
+  for (
+    int i = TOP_SCORE_COUNT - 1;
+    i > position;
+    i--
+  ) {
+    strcpy(
+      initials[i],
+      initials[i - 1]
+    );
+  }
+
+  // Default initials for the new score
+  strcpy(initials[position], "AAAA");
+}
+
+  // G. GENERAL SCREENS //
+
+void drawSplashScreen() {
+  tft.fillScreen(COLOR_BG);
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  // min/max font
+  tft.setTextColor(COLOR_SPLASH1);
+  tft.setTextSize(2);
+  tft.getTextBounds("min-max", 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 4);
+  tft.print("min/max");
+
+  // ARCADE font
+  tft.setTextColor(COLOR_SPLASH2);
+  tft.setTextSize(4);
+  tft.getTextBounds("ARCADE", 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 28);
+  tft.print("ARCADE");
+
+  // min/max font
+  tft.setTextColor(COLOR_SPLASH3);
+  tft.setTextSize(2);
+  tft.getTextBounds("-laamakala-", 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 68);
+  tft.print("-laamakala-");
+}
+
+void drawMainMenu() {
+
+  tft.fillScreen(COLOR_BG);
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_TEXT);
+
+  for (int i = 0; i < MAIN_MENU_COUNT; i++) {
+    int y = 2 + (i * 18);
+
+    if (i == mainMenuIndex) {
+      tft.setTextColor(COLOR_SELECT);
+
+      int16_t x1, y1;
+      uint16_t w, h;
+      
+      tft.getTextBounds(mainMenuOptions[i], 0, 0, &x1, &y1, &w, &h);
+
+      tft.setCursor((SCREEN_WIDTH -w) / 2, y);
+
+      tft.print(mainMenuOptions[i]);
+
+    } else {
+      tft.setTextColor(COLOR_TEXT);
+      int16_t x1, y1;
+      uint16_t w, h;
+
+      tft.getTextBounds(mainMenuOptions[i], 0, 0, &x1, &y1, &w, &h);
+      tft.setCursor((SCREEN_WIDTH -w) / 2, y);
+      tft.print(mainMenuOptions[i]);
+    }
+  }
+
+  // Bottom-right1 ✓ check mark
+  tft.drawLine(3, 75, 4, 77, COLOR_SELECT);
+  tft.drawLine(2, 75, 5, 77, COLOR_SELECT);
+  tft.drawLine(5, 77, 10, 72, COLOR_SELECT);
+  tft.drawLine(5, 77, 9, 72, COLOR_SELECT);
+
+  // Bottom-right2 ✗ back mark
+  tft.drawLine(152, 71, 158, 77, COLOR_BACK);
+  tft.drawLine(152, 72, 156, 76, COLOR_BACK);
+  tft.drawLine(156, 72, 152, 78, COLOR_BACK);
+  tft.drawLine(157, 72, 151, 78, COLOR_BACK);
+}
+
+void drawMenuControls() {
+
+  // Bottom-right1 ✓ check mark
+  tft.drawLine(139, 75, 140, 77, COLOR_SELECT);
+  tft.drawLine(138, 75, 141, 77, COLOR_SELECT);
+  tft.drawLine(141, 77, 146, 72, COLOR_SELECT);
+  tft.drawLine(141, 77, 145, 72, COLOR_SELECT);
+
+  // Bottom-right2 ✗ back mark
+  tft.drawLine(152, 71, 158, 77, COLOR_BACK);
+  tft.drawLine(152, 72, 156, 76, COLOR_BACK);
+  tft.drawLine(156, 72, 152, 78, COLOR_BACK);
+  tft.drawLine(157, 72, 151, 78, COLOR_BACK);
+
+  // Small medal icon, top-right corner
+  // Medal ribbons
+  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
+  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);  
+  // Medal circle
+  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
+  // Medal center dot
+  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
+}
+
+void drawPlayingScreen(int score) {
+
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(COLOR_TEXT);
+    tft.setTextSize(4);
+    
+    char buffer[10];
+    sprintf(buffer, "%d", score);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    tft.getTextBounds(buffer,0,0,&x1,&y1,&w,&h);
+    tft.setCursor((SCREEN_WIDTH -w)/2, (SCREEN_HEIGHT -h)/2);
+    tft.print(buffer);
+}
+
+void drawGameOverScreen(int score) {
+
+  tft.fillScreen(COLOR_BG);
+
+  if (newHighScore) {
+    tft.setTextColor(COLOR_SUCCESS);
+    tft.setTextSize(2);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    tft.getTextBounds("NEW HIGHSCORE", 0, 0,
+                      &x1, &y1, &w, &h);
+
+    tft.setCursor((SCREEN_WIDTH - w) / 2, 6);
+    tft.print("NEW HIGHSCORE");
+
+/*/ From this part is new
+    if (newHighScore && pendingInitials != nullptr) {
+
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_SELECT);
+
+    int16_t promptX1, promptY1;
+    uint16_t promptW, promptH;
+
+    tft.getTextBounds(
+      "ENTER INITIALS",
+      0, 0,
+      &promptX1, &promptY1,
+      &promptW, &promptH
+    );
+
+    tft.setCursor(
+      (SCREEN_WIDTH - promptW) / 2,
+      69
+    );
+
+    tft.print("ENTER INITIALS");
+  }
+// to this part is new
+*/
+
+  } else {
+    tft.setTextColor(COLOR_GAME_OVER);
+    tft.setTextSize(2);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    tft.getTextBounds("GAME OVER", 0, 0,
+                      &x1, &y1, &w, &h);
+
+    tft.setCursor((SCREEN_WIDTH - w) / 2, 6);
+    tft.print("GAME OVER");
+  }
+
+  // Score
+  char buffer[10];
+  sprintf(buffer, "%d", score);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.setTextColor(COLOR_TEXT);
+  tft.setTextSize(4);
+
+  tft.getTextBounds(buffer, 0, 0,
+                    &x1, &y1, &w, &h);
+
+  int scoreY = newHighScore ? 34 : 28;
+
+  tft.setCursor((SCREEN_WIDTH - w) / 2, scoreY);
+  tft.print(buffer);
+
+  // High score
+  tft.setTextSize(1);
+}
+
+  // H. MENU SCREENS //
+
+void drawSpeedtestMenu() {
+
+  // Title, font, color, background
+  tft.fillScreen(COLOR_BG);
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_SPEEDTEST);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds(
+      "speedtest",
+      0, 0,
+      &x1, &y1,
+      &w, &h
   );
+
+  // Title
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
+  tft.print("speedtest");
+
+  int firstVisible = getFirstVisibleItem(
+    speedtestIndex,
+    SPEEDTEST_COUNT,
+    VISIBLE_MENU_ROWS
+  );
+
+  // Difficulties + highscores
+  for (int row = 0; row < VISIBLE_MENU_ROWS; row++) {
+    int optionIndex = firstVisible + row;
+    // Stop if there are no more options
+    if (optionIndex >= SPEEDTEST_COUNT) {
+      break;
+    }
+
+    int y = 18 + row * 16;
+    char normal[12];
+    char noLight[12];
+
+    snprintf(
+      normal,
+      sizeof(normal),
+      "%d",
+      speedHS.normal[optionIndex][0]
+    );
+
+    snprintf(
+      noLight,
+      sizeof(noLight),
+      "%d",
+      speedHS.noLight[optionIndex][0]
+    );
+
+    if (optionIndex == speedtestIndex) {
+      tft.setTextSize(2);
+      tft.setTextColor(COLOR_SELECT);
+      tft.setCursor(0, y);
+      tft.print("> ");
+      tft.print(speedtestOptions[optionIndex]);
+
+    } else {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_TEXT);
+      tft.setCursor(10, y);
+      tft.print(speedtestOptions[optionIndex]);
+    }
+
+    // Highscore text size depends on selection
+    int hsSize =
+      optionIndex == speedtestIndex ? 2 : 1;
+    tft.setTextSize(hsSize);
+    // Normal-mode first-place score
+    tft.setTextColor(COLOR_NORMAL_HS);
+    tft.setCursor(70, y);
+    tft.print(normal);
+  }
+  drawMenuControls();
 }
 
-// Navigate select Sounds
-void playSelectSound() {
-  playTone(FX_BUZZER, 277, 16); // tone(FX_BUZZER, 330, 8); v1
-  delay(16);
-  playTone(FX_BUZZER, 370, 24); // tone(FX_BUZZER, 660, 8); v1
+void drawSimonMenu() {
+
+  // Title, font, color, background
+  tft.fillScreen(COLOR_BG);
+
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_SIMON);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds(
+    "simon says",
+    0, 0,
+    &x1, &y1,
+    &w, &h
+  );
+
+  // Title
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
+  tft.print("simon says");
+
+  // Calculate the first visible menu option
+  int firstVisible = getFirstVisibleItem(
+    simonIndex,
+    SIMONSAYS_COUNT,
+    VISIBLE_MENU_ROWS
+  );
+
+  // Draw visible difficulty rows
+  for (int row = 0; row < VISIBLE_MENU_ROWS; row++) {
+
+    int optionIndex = firstVisible + row;
+
+    // Safety check
+    if (optionIndex >= SIMONSAYS_COUNT) {
+      break;
+    }
+
+    int y = 18 + row * 15;
+
+    char normal[12];
+
+    snprintf(
+      normal,
+      sizeof(normal),
+      "%d",
+      simonHS.normal[optionIndex][0]
+    );
+    
+    // print difficulty options and current top1 highscore
+    if (optionIndex == simonIndex) {
+      tft.setTextSize(2);
+      tft.setTextColor(COLOR_SELECT);
+      tft.setCursor(0, y);
+      tft.print("> ");
+      tft.print(simonOptions[optionIndex]);
+
+    } else {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_TEXT);
+      tft.setCursor(10, y);
+
+      tft.print(simonOptions[optionIndex]);
+    }
+
+    int hsSize =
+      optionIndex == simonIndex ? 2 : 1;
+
+    tft.setTextSize(hsSize);
+
+    // Normal-mode first-place score
+    tft.setTextColor(COLOR_NORMAL_HS);
+    tft.setCursor(105, y);
+    tft.print(normal);
+  }
+
+  drawMenuControls();
 }
 
-// Navigate back sound
-void playBackSound() {
-  playTone(FX_BUZZER, 349, 16); // tone(FX_BUZZER, 660, 8); v1
-  delay(16);
-  playTone(FX_BUZZER, 247, 24); // tone(FX_BUZZER, 330, 8); v1
+void drawReactionMenu() {
+
+  // Title, font, color, background
+  tft.fillScreen(COLOR_BG);
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_REACTION);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds("REACTION", 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
+  tft.print("reaction");
+
+  // Difficulties + highscores
+  for (int i = 0; i < REACTION_COUNT; i++) {
+    int y = 20 + (i * 20);
+    char normal[12];
+    char noLight[12];
+
+    snprintf(normal, sizeof(normal), "%d", reactionHS.normal[i][0]);
+    snprintf(noLight, sizeof(noLight), "%d", reactionHS.noLight[i][0]);
+
+    if (i == reactionIndex) {
+      tft.setTextSize(2);
+      tft.setTextColor(COLOR_SELECT);
+
+      char buffer[20];
+      sprintf(buffer, "> %s", reactionOptions[i]);
+
+      tft.setCursor(0, y);
+      tft.print(buffer);
+
+    } else {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_TEXT);
+
+      tft.setCursor(10, y);
+      tft.print(reactionOptions[i]);
+    }
+      
+    // Highscore text size depending on selection 1 or 2
+    int hsSize =
+        (i == reactionIndex)
+            ? 2
+            : 1;
+    tft.setTextSize(hsSize);
+
+    // Normal mode highscore
+    tft.setTextColor(COLOR_NORMAL_HS);
+    tft.setCursor(100, y);
+    tft.print(normal);
+  }
+  drawMenuControls();
 }
 
-// Navigate up sound // EDIT
-void playNavUpSound() {
-  playTone(FX_BUZZER, 330, 8);
-  delay(16);
-  playTone(NOTE_BUZZER, 300, 8);
+void drawSoloMenu() {
+
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(COLOR_SOLO);
+  tft.setTextSize(2);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds("solo", 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
+  tft.print("solo JAM");
+  tft.setTextSize(2);
+
+  for (int i = 0; i < SOLO_COUNT; i++) {
+    int y = 20 + (i * 20);
+    if (i == soloIndex) {
+      tft.setTextColor(COLOR_SELECT);
+      char buffer[20];
+      sprintf(buffer, "> %s", soloOptions[i]);
+      tft.setCursor(0, y);
+      tft.print(buffer);
+    } else {
+      tft.setTextColor(COLOR_TEXT);
+      tft.setCursor(10, y);
+      tft.print(soloOptions[i]);
+    }
+  }
+
+  // Bottom-right1 ✓ check mark
+  tft.drawLine(139, 75, 140, 77, COLOR_SELECT);
+  tft.drawLine(138, 75, 141, 77, COLOR_SELECT);
+  tft.drawLine(141, 77, 146, 72, COLOR_SELECT);
+  tft.drawLine(141, 77, 145, 72, COLOR_SELECT);
+
+  // Bottom-right2 ✗ back mark
+  tft.drawLine(152, 71, 158, 77, COLOR_BACK);
+  tft.drawLine(152, 72, 156, 76, COLOR_BACK);
+  tft.drawLine(156, 72, 152, 78, COLOR_BACK);
+  tft.drawLine(157, 72, 151, 78, COLOR_BACK);
 }
 
-// navigate down sound // EDIT
-void playNavDownSound() {
-  playTone(FX_BUZZER, 262, 8);
-  delay(32);
-  playTone(NOTE_BUZZER, 275, 8);
+  // I. LEADERBOARDS //
+
+void drawSpeedLeaderboard() {
+
+  tft.fillScreen(COLOR_BG);
+
+  // Title
+  tft.setTextColor(COLOR_SPEEDTEST);
+  tft.setTextSize(2);
+  tft.setCursor(2, 2);
+  tft.print("fastestests"); // "fast AF"
+
+  // Small medal icon, top-right corner
+  // Medal ribbons
+  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
+  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);
+  
+  // Medal circle
+  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
+  // Medal center dot
+  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
+
+  // Print highscores
+  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
+
+    int y;
+
+    if (i == 0) {
+      y = 20;
+    } else {
+      y = 40 + (i - 1) * 12;
+    }
+
+    // Position number
+    tft.setTextSize(i == 0 ? 2 : 1);
+    tft.setTextColor(COLOR_TEXT);
+    tft.setCursor(2, y);
+    tft.print(i + 1);
+
+    if (i == 0) {
+      // Custom dot closer to the text-size-2 number
+      tft.fillCircle(13, y +12, 1, COLOR_TEXT);
+    } else {
+      // Normal font spacing is fine for places 2-4
+      tft.print("."); 
+    }
+    
+    // Normal-mode score
+    tft.setTextColor(COLOR_SELECT);
+    tft.setCursor(i == 0 ? 22 : 18, y);
+    tft.print(speedHS.normal[speedtestIndex][i]);
+
+    // Normal-mode initials
+    tft.setTextSize(1);
+    tft.setCursor(50, y);
+
+    if (speedNormalInitials[speedtestIndex][i][0] == '\0') {
+      tft.print("----");
+    } else {
+      tft.print(
+        speedNormalInitials[speedtestIndex][i]
+      );
+    }
+
+    // No-light score
+    tft.setTextSize(i == 0 ? 2 : 1);
+    tft.setTextColor(COLOR_PASTEL_YELLOW);
+    tft.setCursor(i == 0 ? 88 : 90, y);
+    tft.print(speedHS.noLight[speedtestIndex][i]);
+
+    // No-light initials
+    tft.setTextSize(1);
+    tft.setCursor(120, y);
+
+    if (speedNoLightInitials[speedtestIndex][i][0] == '\0') {
+      tft.print("----");
+    } else {
+      tft.print(
+        speedNoLightInitials[speedtestIndex][i]
+      );
+    }
+  }
+
 }
 
-// Game over Sound
-void playGameOverSound() {
-  playTone(FX_BUZZER, 220, 30);
-  playTone(NOTE_BUZZER, 180, 50);
-  delay(20);
+void drawSimonLeaderboard() {
+  tft.fillScreen(COLOR_BG);
 
-  playTone(FX_BUZZER, 120, 70);
-  playTone(NOTE_BUZZER, 100, 40);
-  delay(80);
+  // Title
+  tft.setTextColor(COLOR_SIMON);
+  tft.setTextSize(2);
+  tft.setCursor(2, 2);
+  tft.print("memoriests");
 
-  noTone(FX_BUZZER);
-  noTone(NOTE_BUZZER);
+  // Small medal icon, top-right corner
+  // Medal ribbons
+  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
+  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);
+  
+  // Medal circle
+  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
+  // Medal center dot
+  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
+
+  // Print Highscores, 1st place larger font, 2nd-4th smaller font
+  tft.setTextSize(2);
+  
+  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
+    int y;
+
+    if (i == 0) {
+      tft.setTextSize(2); // First place
+      y = 20;
+    } else {
+      tft.setTextSize(1); // Places 2-4
+      y = 43 + (i-1) * 16;
+    } 
+
+    // Position number
+    tft.setTextColor(COLOR_TEXT);
+    tft.setCursor(2, y);
+    tft.print(i + 1);
+    tft.print(".");
+
+    // Normal Mode High Score
+    tft.setTextColor(COLOR_SELECT);
+    tft.setCursor(35, y);
+    tft.print(simonHS.normal[simonIndex][i]);
+
+    // No Light Mode High Score
+    tft.setTextColor(COLOR_PASTEL_YELLOW);
+    tft.setCursor(105, y);
+    tft.print(simonHS.noLight[simonIndex][i]);
+  }
 }
 
-// New high score sound
-void playVictorySound() {
-  playTone(FX_BUZZER, 523, 16);
-  delay(5);
-  playTone(FX_BUZZER, 659, 16);
-  delay(5);
-  playTone(FX_BUZZER, 784, 16);
-  delay(5);
-  playTone(FX_BUZZER, 1047, 50);
-  delay(60);
-  noTone(FX_BUZZER);
+void drawReactionLeaderboard() {
+  tft.fillScreen(COLOR_BG);
+
+  // Title
+  tft.setTextColor(COLOR_REACTION);
+  tft.setTextSize(2);
+  tft.setCursor(2, 2);
+  tft.print("pinglessest");
+
+  // Small medal icon, top-right corner
+  // Medal ribbons
+  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
+  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);
+  
+  // Medal circle
+  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
+  // Medal center dot
+  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
+
+  // Print Highscores, 1st place larger font, 2nd-4th smaller font
+  tft.setTextSize(2);
+  
+  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
+    int y;
+    if (i == 0) {
+      tft.setTextSize(2); // First place
+      y = 20;
+    } else {
+      tft.setTextSize(1); // Places 2-4
+      y = 43 + (i-1) * 16;
+    } 
+
+    // Position number
+    tft.setTextColor(COLOR_TEXT);
+    tft.setCursor(2, y);
+    tft.print(i + 1);
+    tft.print(".");
+
+    // Normal Mode High Score
+    tft.setTextColor(COLOR_SELECT);
+    tft.setCursor(35, y);
+    tft.print(reactionHS.normal[reactionIndex][i]);
+
+    // No Light Mode High Score
+    tft.setTextColor(COLOR_PASTEL_YELLOW);
+    tft.setCursor(105, y);
+    tft.print(reactionHS.noLight[reactionIndex][i]);
+  }
 }
 
-// ----- GAMEPLAY FUNCTIONS ----- //
+  // J. INITIALS ENTRY
 
-// Spawn music note for background animations
+void startInitialsEntry() {
+
+  enteredInitials[0] = 'A';
+  enteredInitials[1] = 'A';
+  enteredInitials[2] = 'A';
+  enteredInitials[3] = 'A';
+  enteredInitials[4] = '\0';
+
+  initialsPosition = 0;
+  initialsCharacter = 'A';
+
+  turnOffAllInputLights();
+
+  currentState = STATE_ENTER_INITIALS;
+}
+
+void drawInitialsEntry() {
+  tft.fillScreen(COLOR_BG);
+
+  // Title
+  tft.setTextColor(COLOR_SUCCESS);
+  tft.setTextSize(2);
+  tft.setCursor(2, 2);
+  tft.print("NEW HIGHSCORE");
+
+  // Achieved score
+  tft.setTextColor(COLOR_SPEEDTEST);
+  tft.setTextSize(3);
+
+  char scoreBuffer[12];
+
+  snprintf(scoreBuffer, sizeof(scoreBuffer), "%d", lastScore);
+
+  int16_t scoreX1, scoreY1;
+  uint16_t scoreW, scoreH;
+
+  tft.getTextBounds(
+    scoreBuffer,
+    0, 0,
+    &scoreX1, &scoreY1,
+    &scoreW, &scoreH
+  );
+
+  tft.setCursor(
+    (SCREEN_WIDTH -scoreW) / 2,
+    20
+  );
+
+  tft.print(scoreBuffer);
+
+  // Four initials
+  tft.setTextSize(3);
+
+  for (int i = 0; i < INITIAL_COUNT; i++) {
+
+    int x = 22 + i * 35;
+    int y = 50;
+
+    if (i == initialsPosition) {
+
+      // Selected letter
+      tft.setTextColor(COLOR_SELECT);
+
+      // Selection box
+      tft.drawRect(
+        x - 4,
+        y - 4,
+        27,
+        31,
+        COLOR_SELECT
+      );
+
+    } else {
+      tft.setTextColor(COLOR_TEXT);
+    }
+
+    tft.setCursor(x, y);
+    tft.print(enteredInitials[i]);
+  }
+/*
+  // Small control instructions
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_PASTEL_YELLOW);
+  tft.setCursor(2, 70);
+  tft.print("STRUM:CHANGE G:OK R:BACK");
+*/
+
+}
+
+void updateInitialsEntry() {
+
+  // Next printable ASCII character
+  if (strumUpPressed()) {
+
+    initialsCharacter++;
+
+    if (initialsCharacter > 126) {
+      initialsCharacter = 32;
+    }
+
+    enteredInitials[initialsPosition] =
+      static_cast<char>(initialsCharacter);
+
+    playTone(
+      FX_BUZZER,
+      300 + initialsCharacter,
+      25
+    );
+
+    drawInitialsEntry();
+  }
+
+  // Previous printable ASCII character
+  if (strumDownPressed()) {
+
+    initialsCharacter--;
+
+    if (initialsCharacter < 32) {
+      initialsCharacter = 126;
+    }
+
+    enteredInitials[initialsPosition] =
+      static_cast<char>(initialsCharacter);
+
+    playTone(
+      FX_BUZZER,
+      300 + initialsCharacter,
+      25
+    );
+
+    drawInitialsEntry();
+  }
+
+  // Green confirms the current character
+  if (greenPressed()) {
+
+    playSelectSound();
+
+    // Move to the next character
+    if (initialsPosition < INITIAL_COUNT - 1) {
+
+      initialsPosition++;
+
+      initialsCharacter =
+        enteredInitials[initialsPosition];
+
+      drawInitialsEntry();
+
+    } else {
+
+      // Fourth character confirmed, save initials
+      enteredInitials[INITIAL_COUNT] = '\0';
+
+      if (pendingInitials != nullptr) {
+        strcpy(
+          pendingInitials,
+          enteredInitials
+        );
+      }
+
+      // Save every game's scores and initials
+      saveHighScores();
+
+      newHighScore = false;
+      pendingInitials = nullptr;
+
+      // Open the leaderboard for the game just played
+      if (currentGame == GAME_SPEEDTEST) {
+        speedLeaderboardOpen = true;
+        currentState = STATE_SPEEDTEST_MENU;
+
+      } else  if (currentGame == GAME_SIMON) {
+        simonLeaderboardOpen = true;
+        currentState = STATE_SIMON_MENU;
+
+      } else if (currentGame == GAME_REACTION) {
+        reactionLeaderboardOpen = true;
+        currentState = STATE_REACTION_MENU;
+      }
+    }
+  }
+
+  // Red returns to the previous character
+  if (redPressed()) {
+
+    if (initialsPosition > 0) {
+
+      playBackSound();
+
+      initialsPosition--;
+
+      initialsCharacter =
+        enteredInitials[initialsPosition];
+
+      drawInitialsEntry();
+    }
+  }
+
+  // Yellow fret toggles uppercase/lowercase
+  if (yellowPressed()) {
+    // A-Z -> a-z
+    if (
+      initialsCharacter >= 'A' &&
+      initialsCharacter <= 'Z'
+    ) {
+      initialsCharacter += 32;
+    } else if (
+      initialsCharacter >= 'a' &&
+      initialsCharacter <= 'z'
+    ) {
+      initialsCharacter -= 32;
+    }
+    enteredInitials[initialsPosition] =
+      static_cast<char>(initialsCharacter);
+
+      drawInitialsEntry();
+  } 
+
+  // Blue fret jumps to numbers and back to A
+  if (bluePressed()) {
+    // A-Z -> a-z
+    if (
+      initialsCharacter >= 'A' &&
+      initialsCharacter <= 'z'
+    ) {
+      initialsCharacter = '0';
+    } else if (
+      initialsCharacter < 'A' ||
+      initialsCharacter > 'z'
+    ) {
+      initialsCharacter = 'A';
+    }
+    enteredInitials[initialsPosition] =
+      static_cast<char>(initialsCharacter);
+
+      drawInitialsEntry();
+  } 
+
+  // Orange makes a space
+  if (orangePressed()) {
+    initialsCharacter = ' ';
+    enteredInitials[initialsPosition] =
+      static_cast<char>(initialsCharacter);
+    drawInitialsEntry();
+  }
+}
+
+  // K. DIFFICULTY HELPERS //
+
+void configureSpeedtestDifficulty() {
+  switch (speedtestIndex) {
+    case 0: numInputs = 3; break;
+    case 1: numInputs = 4; break;
+    case 2: numInputs = 5; break;
+    case 3: numInputs = 6; break;
+  }
+}
+
+void configureSimonsaysDifficulty() {
+  switch (simonIndex) {
+    case 0: numInputs = 2; break;
+    case 1: numInputs = 3; break;
+    case 2: numInputs = 4; break;
+    case 3: numInputs = 5; break;
+    case 4: numInputs = 6; break; // 5 frets + strum bar
+  }
+}
+
+void configureReactionDifficulty() {
+    reactionRequireCorrectFret =
+        (reactionIndex == 1);
+}
+
+  // L. REACTION SCREEN HELPERS //
+
+void drawReactionWaitScreen() {
+
+  tft.fillScreen(COLOR_BG);
+
+  tft.setTextColor(COLOR_REACTION);
+  tft.setTextSize(3);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds("WAIT", 0, 0, &x1, &y1, &w, &h);
+
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 25);
+  tft.print("WAIT");
+}
+
+void drawReactionGoScreen() {
+
+  tft.fillScreen(COLOR_SELECT);
+
+  tft.setTextColor(COLOR_REACTION);
+  tft.setTextSize(4);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds("GO", 0, 0, &x1, &y1, &w, &h);
+
+  tft.setCursor((SCREEN_WIDTH - w) / 2, 20);
+
+  tft.print("GO");
+}
+
+void drawReactionTimeScreen(unsigned long reaction) {
+
+    tft.fillScreen(COLOR_SELECT);
+    tft.setTextColor(COLOR_BG);
+    tft.setTextSize(2);
+
+    tft.setCursor(10, 10);
+    tft.print(reaction);
+    tft.print(" ms");
+
+    tft.setCursor(10, 40);
+    tft.print("PRESS");
+
+    tft.setTextColor(COLOR_TEXT);
+    tft.print(" G");
+}
+
+void startReactionCue(int targetFret) {
+
+  turnOffAllInputLights();
+
+  drawReactionGoScreen();
+
+  // Visual cue
+  if (useLight) {
+    if (reactionIndex == 0) {
+      // Simple mode accepts any fret
+      for (int i = 0; i < FRET_COUNT; i++) {
+        digitalWrite(LED_PINS[i], HIGH);
+      }
+
+    } else {
+      // Chaos mode requires the target fret
+      digitalWrite(
+        LED_PINS[targetFret],
+        HIGH
+      );
+    }
+  }
+
+  // Audio cue
+  if (useSound) {
+    if (reactionIndex == 0) {
+      playTone(
+        NOTE_BUZZER,
+        575,
+        120
+      );
+
+    } else {
+      // Each target fret has a different note      
+      playTone(
+        NOTE_BUZZER,
+        SOLO_BLUES[3][targetFret],
+        120
+      );
+    }
+  }
+}
+
+/*
+// Reaction game: result screen after 5 rounds
+void drawReactionResultScreen(int average, int best, int worst) {
+
+    tft.fillScreen(COLOR_BG);
+
+    tft.setTextColor(COLOR_REACTION);
+    tft.setTextSize(2);
+
+    tft.setCursor(10, 2);
+    tft.print("RESULT");
+
+    tft.setTextColor(COLOR_TEXT);
+    tft.setTextSize(2);
+
+    tft.setCursor(10, 25);
+    tft.print("AVG:");
+    tft.print(average);
+
+    tft.setCursor(10, 45);
+    tft.print("BEST:");
+    tft.print(best);
+
+    tft.setCursor(10, 65);
+    tft.print("WORST:");
+    tft.print(worst);
+}
+*/
+
+/* 
+// Reaction game: Draw screen for when the player presses a button too early
+void drawTooEarlyScreen() {
+
+    tft.fillScreen(COLOR_ERROR);
+
+    tft.setTextColor(COLOR_TEXT);
+    tft.setTextSize(2);
+
+    tft.setCursor(10, 10);
+    tft.print("NOT YET");
+
+    tft.setCursor(10, 40);
+    tft.print("PRESS");
+
+    tft.setTextColor(COLOR_NORMAL_HS);
+    tft.print(" G");
+}
+    */
+
+  // M. SOLO-JAM ANIMATION HELPERS //
+
 void spawnNote(int fret) {
 
-    if (activeNotes >= 10)
+    if (activeNotes >= MAX_MUSIC_NOTES)
         return;
 
     notes[activeNotes].active = true;
 
     notes[activeNotes].symbolIndex = fret;
-    notes[activeNotes].noteType = random(0, 5);
+    notes[activeNotes].noteType = random(0, FRET_COUNT);
     
     // notes[activeNotes].color = noteColor;
 
@@ -1208,7 +2449,6 @@ void spawnNote(int fret) {
     activeNotes++;
 }
 
-// Print music notes for the background animation
 void drawNotes() {
     for (int i = 0; i < activeNotes; i++) {
       uint16_t noteColor;      
@@ -1342,7 +2582,6 @@ void drawNotes() {
   }
 }
 
-// Music note background animation
 void updateNotes() {
     for (int i = 0; i < activeNotes; i++) {
         if (!notes[i].active)
@@ -1354,7 +2593,6 @@ void updateNotes() {
     }
 }
 
-// cleanup old notes
 void cleanupNotes() {
     int writeIndex = 0;
     for (int i = 0; i < activeNotes; i++) {
@@ -1366,212 +2604,17 @@ void cleanupNotes() {
     activeNotes = writeIndex;
 }
 
-// ----- Boot Splash screen and Main Menu ----- //
+void drawSoloRoot() {
 
-// Start up Splash screen
-void drawSplashScreen() {
-  tft.fillScreen(COLOR_BG);
-  int16_t x1, y1;
-  uint16_t w, h;
+    tft.fillRect(120, 0, 40, 16, COLOR_BG);
 
-  // min/max font
-  tft.setTextColor(COLOR_SPLASH1);
-  tft.setTextSize(2);
-  tft.getTextBounds("min-max", 0, 0, &x1, &y1, &w, &h);
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 4);
-  tft.print("min/max");
+    tft.setTextSize(2);
+    tft.setTextColor(COLOR_SOLO);
 
-  // ARCADE font
-  tft.setTextColor(COLOR_SPLASH2);
-  tft.setTextSize(4);
-  tft.getTextBounds("ARCADE", 0, 0, &x1, &y1, &w, &h);
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 28);
-  tft.print("ARCADE");
-
-  // min/max font
-  tft.setTextColor(COLOR_SPLASH3);
-  tft.setTextSize(2);
-  tft.getTextBounds("-laamakala-", 0, 0, &x1, &y1, &w, &h);
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 68);
-  tft.print("-laamakala-");
+    tft.setCursor(140, 0);
+    tft.print(ROOT_NAMES[soloRoot]);
 }
 
-// draw main menu to select game
-void drawMainMenu() {
-
-  tft.fillScreen(COLOR_BG);
-  tft.setTextSize(2);
-  tft.setTextColor(COLOR_TEXT);
-
-  for (int i = 0; i < MAIN_MENU_COUNT; i++) {
-    int y = 2 + (i * 18);
-
-    if (i == mainMenuIndex) {
-      tft.setTextColor(COLOR_SELECT);
-      char buffer [32];
-      sprintf(buffer, "> %s <", mainMenuOptions[i]);
-      int16_t x1, y1;
-      uint16_t w, h;
-      tft.getTextBounds(buffer, 0, 0, &x1, &y1, &w, &h);
-      tft.setCursor((SCREEN_WIDTH -w) / 2, y+4);
-      tft.print(buffer);
-
-    } else {
-      tft.setTextColor(COLOR_TEXT);
-      int16_t x1, y1;
-      uint16_t w, h;
-
-      tft.getTextBounds(mainMenuOptions[i], 0, 0, &x1, &y1, &w, &h);
-      tft.setCursor((SCREEN_WIDTH -w) / 2, y);
-      tft.print(mainMenuOptions[i]);
-    }
-  }
-
-  // Bottom-right1 ✓ check mark
-  tft.drawLine(3, 75, 4, 77, COLOR_SELECT);
-  tft.drawLine(2, 75, 5, 77, COLOR_SELECT);
-  tft.drawLine(5, 77, 10, 72, COLOR_SELECT);
-  tft.drawLine(5, 77, 9, 72, COLOR_SELECT);
-
-  // Bottom-right2 ✗ back mark
-  tft.drawLine(152, 71, 158, 77, COLOR_BACK);
-  tft.drawLine(152, 72, 156, 76, COLOR_BACK);
-  tft.drawLine(156, 72, 152, 78, COLOR_BACK);
-  tft.drawLine(157, 72, 151, 78, COLOR_BACK);
-}
-
-// ----- Draw Game Screens ----- //
-
-void prepareInitialsSlot(
-  char initials[TOP_SCORE_COUNT][INITIAL_COUNT + 1],
-  int position
-) {
-  // Move existing initials down
-  for (
-    int i = TOP_SCORE_COUNT - 1;
-    i > position;
-    i--
-  ) {
-    strcpy(
-      initials[i],
-      initials[i - 1]
-    );
-  }
-
-  // Default initials for the new score
-  strcpy(initials[position], "AAAA");
-}
-
-// Enter initials to new top4 highscore
-void startInitialsEntry() {
-
-  enteredInitials[0] = 'A';
-  enteredInitials[1] = 'A';
-  enteredInitials[2] = 'A';
-  enteredInitials[3] = 'A';
-  enteredInitials[4] = '\0';
-
-  initialsPosition = 0;
-  initialsCharacter = 'A';
-
-  turnOffAllInputLights();
-
-  currentState = STATE_ENTER_INITIALS;
-}
-
-// Draw initials entry screen after new highscore
-void drawInitialsEntry() {
-  tft.fillScreen(COLOR_BG);
-
-  // Title
-  tft.setTextColor(COLOR_SUCCESS);
-  tft.setTextSize(2);
-  tft.setCursor(2, 2);
-  tft.print("NEW HIGHSCORE");
-
-  // Achieved score
-  tft.setTextColor(COLOR_SPEEDTEST);
-  tft.setTextSize(3);
-
-  char scoreBuffer[12];
-
-  snprintf(scoreBuffer, sizeof(scoreBuffer), "%d", lastScore);
-
-  int16_t scoreX1, scoreY1;
-  uint16_t scoreW, scoreH;
-
-  tft.getTextBounds(
-    scoreBuffer,
-    0, 0,
-    &scoreX1, &scoreY1,
-    &scoreW, &scoreH
-  );
-
-  tft.setCursor(
-    (SCREEN_WIDTH -scoreW) / 2,
-    20
-  );
-
-  tft.print(scoreBuffer);
-
-  // Four initials
-  tft.setTextSize(3);
-
-  for (int i = 0; i < INITIAL_COUNT; i++) {
-
-    int x = 22 + i * 35;
-    int y = 50;
-
-    if (i == initialsPosition) {
-
-      // Selected letter
-      tft.setTextColor(COLOR_SELECT);
-
-      // Selection box
-      tft.drawRect(
-        x - 4,
-        y - 4,
-        27,
-        31,
-        COLOR_SELECT
-      );
-
-    } else {
-      tft.setTextColor(COLOR_TEXT);
-    }
-
-    tft.setCursor(x, y);
-    tft.print(enteredInitials[i]);
-  }
-/*
-  // Small control instructions
-  tft.setTextSize(1);
-  tft.setTextColor(COLOR_PASTEL_YELLOW);
-  tft.setCursor(2, 70);
-  tft.print("STRUM:CHANGE G:OK R:BACK");
-*/
-
-}
-
-// Final Score screen
-void drawPlayingScreen(int score) {
-
-    tft.fillScreen(COLOR_BG);
-    tft.setTextColor(COLOR_TEXT);
-    tft.setTextSize(4);
-    
-    char buffer[10];
-    sprintf(buffer, "%d", score);
-
-    int16_t x1, y1;
-    uint16_t w, h;
-
-    tft.getTextBounds(buffer,0,0,&x1,&y1,&w,&h);
-    tft.setCursor((SCREEN_WIDTH -w)/2, (SCREEN_HEIGHT -h)/2);
-    tft.print(buffer);
-}
-
-// Screen for playing solo mode
 void drawSoloPlayingScreen() {
 
   tft.fillScreen(COLOR_BG);
@@ -1597,786 +2640,26 @@ void drawSoloPlayingScreen() {
   drawSoloRoot();
 }
 
-// Game over screen with score and new high score notification
-void drawGameOverScreen(int score) {
+  // N. MENU UPDATES //
 
-  tft.fillScreen(COLOR_BG);
-
-  if (newHighScore) {
-    tft.setTextColor(COLOR_SUCCESS);
-    tft.setTextSize(2);
-
-    int16_t x1, y1;
-    uint16_t w, h;
-
-    tft.getTextBounds("NEW HIGHSCORE", 0, 0,
-                      &x1, &y1, &w, &h);
-
-    tft.setCursor((SCREEN_WIDTH - w) / 2, 6);
-    tft.print("NEW HIGHSCORE");
-
-/*/ From this part is new
-    if (newHighScore && pendingInitials != nullptr) {
-
-    tft.setTextSize(1);
-    tft.setTextColor(COLOR_SELECT);
-
-    int16_t promptX1, promptY1;
-    uint16_t promptW, promptH;
-
-    tft.getTextBounds(
-      "ENTER INITIALS",
-      0, 0,
-      &promptX1, &promptY1,
-      &promptW, &promptH
-    );
-
-    tft.setCursor(
-      (SCREEN_WIDTH - promptW) / 2,
-      69
-    );
-
-    tft.print("ENTER INITIALS");
-  }
-// to this part is new
-*/
-
-  } else {
-    tft.setTextColor(COLOR_GAME_OVER);
-    tft.setTextSize(2);
-
-    int16_t x1, y1;
-    uint16_t w, h;
-
-    tft.getTextBounds("GAME OVER", 0, 0,
-                      &x1, &y1, &w, &h);
-
-    tft.setCursor((SCREEN_WIDTH - w) / 2, 6);
-    tft.print("GAME OVER");
-  }
-
-  // Score
-  char buffer[10];
-  sprintf(buffer, "%d", score);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.setTextColor(COLOR_TEXT);
-  tft.setTextSize(4);
-
-  tft.getTextBounds(buffer, 0, 0,
-                    &x1, &y1, &w, &h);
-
-  int scoreY = newHighScore ? 34 : 28;
-
-  tft.setCursor((SCREEN_WIDTH - w) / 2, scoreY);
-  tft.print(buffer);
-
-  // High score
-  tft.setTextSize(1);
-}
-
-// Reaction game: Draw screen to wait for the player to press the green button
-void drawReactionWaitScreen() {
-
-  tft.fillScreen(COLOR_BG);
-
-  tft.setTextColor(COLOR_REACTION);
-  tft.setTextSize(3);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds("WAIT", 0, 0, &x1, &y1, &w, &h);
-
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 25);
-  tft.print("WAIT");
-}
-
-// Reaction game: result screen after 5 rounds
-void drawReactionResultScreen(int average, int best, int worst) {
-
-    tft.fillScreen(COLOR_BG);
-
-    tft.setTextColor(COLOR_REACTION);
-    tft.setTextSize(2);
-
-    tft.setCursor(10, 2);
-    tft.print("RESULT");
-
-    tft.setTextColor(COLOR_TEXT);
-    tft.setTextSize(2);
-
-    tft.setCursor(10, 25);
-    tft.print("AVG:");
-    tft.print(average);
-
-    tft.setCursor(10, 45);
-    tft.print("BEST:");
-    tft.print(best);
-
-    tft.setCursor(10, 65);
-    tft.print("WORST:");
-    tft.print(worst);
-}
-
-// Reaction game: Draw screen after pressing the button, showing reaction time
-void drawReactionTimeScreen(unsigned long reaction) {
-
-    tft.fillScreen(COLOR_SELECT);
-    tft.setTextColor(COLOR_BG);
-    tft.setTextSize(2);
-
-    tft.setCursor(10, 10);
-    tft.print(reaction);
-    tft.print(" ms");
-
-    tft.setCursor(10, 40);
-    tft.print("PRESS");
-
-    tft.setTextColor(COLOR_TEXT);
-    tft.print(" G");
-}
-
-/* // Reaction game: Draw screen for when the player presses a button too early
-void drawTooEarlyScreen() {
-
-    tft.fillScreen(COLOR_ERROR);
-
-    tft.setTextColor(COLOR_TEXT);
-    tft.setTextSize(2);
-
-    tft.setCursor(10, 10);
-    tft.print("NOT YET");
-
-    tft.setCursor(10, 40);
-    tft.print("PRESS");
-
-    tft.setTextColor(COLOR_NORMAL_HS);
-    tft.print(" G");
-}
-    */
-
-// Reaction game: Wait for the player to press the green button before starting the next round
-void waitForGreenPress() {
-
-    // release
-    while (digitalRead(BUTTON_PINS[0]) == LOW)
-        delay(1);
-
-    // press
-    while (digitalRead(BUTTON_PINS[0]) == HIGH)
-        delay(1);
-
-    // release again
-    while (digitalRead(BUTTON_PINS[0]) == LOW)
-        delay(1);
-}
-
-// Reaction game: turn off all fret LEDs
-void turnOffAllInputLights() {
-  for (int i= 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], LOW);
-  }
-  for (int i= 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
-}
-
-// Reaction game: go screen
-void drawReactionGoScreen() {
-
-  tft.fillScreen(COLOR_SELECT);
-
-  tft.setTextColor(COLOR_REACTION);
-  tft.setTextSize(4);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds("GO", 0, 0, &x1, &y1, &w, &h);
-
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 20);
-
-  tft.print("GO");
-}
-
-// ----- HELPER FUNCTIONS FOR CONFIGURING DIFFICULTY ----- //
-
-// Reaction game: function for drawing different screens
-void startReactionCue(int targetFret) {
-
-  turnOffAllInputLights();
-
-  drawReactionGoScreen();
-
-  // Visual cue
-  if (useLight) {
-    if (reactionIndex == 0) {
-      // Simple mode accepts any fret
-      for (int i = 0; i < FRET_COUNT; i++) {
-        digitalWrite(LED_PINS[i], HIGH);
-      }
-
-    } else {
-      // Chaos mode requires the target fret
-      digitalWrite(
-        LED_PINS[targetFret],
-        HIGH
-      );
-    }
-  }
-
-  // Audio cue
-  if (useSound) {
-    if (reactionIndex == 0) {
-      playTone(
-        NOTE_BUZZER,
-        575,
-        120
-      );
-
-    } else {
-      // Each target fret has a different note      
-      playTone(
-        NOTE_BUZZER,
-        SOLO_BLUES[3][targetFret],
-        120
-      );
-    }
-  }
-}
-
-// speedtest difficulty helper
-void configureSpeedtestDifficulty() {
-  switch (speedtestIndex) {
-    case 0: numInputs = 3; break;
-    case 1: numInputs = 4; break;
-    case 2: numInputs = 5; break;
-    case 3: numInputs = 6; break;
-  }
-}
-
-// simonsays difficulty helper
-void configureSimonsaysDifficulty() {
-  switch (simonIndex) {
-    case 0: numInputs = 2; break;
-    case 1: numInputs = 3; break;
-    case 2: numInputs = 4; break;
-    case 3: numInputs = 5; break;
-    case 4: numInputs = 6; break; // 5 frets + strum bar
-  }
-}
-
-// Reaction difficulty helper
-void configureReactionDifficulty() {
-    reactionRequireCorrectFret =
-        (reactionIndex == 1);
-}
- 
-// ----- DRAW LEADERBOARD SCREENS ----- //
-
-// Speedtest leaderboard
-void drawSpeedLeaderboard() {
-
-  tft.fillScreen(COLOR_BG);
-
-  // Title
-  tft.setTextColor(COLOR_SPEEDTEST);
-  tft.setTextSize(2);
-  tft.setCursor(2, 2);
-  tft.print("fastestests"); // "fast AF"
-
-  // Small medal icon, top-right corner
-  // Medal ribbons
-  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  
-  // Medal circle
-  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
-  // Medal center dot
-  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
-
-  // Print highscores
-  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
-
-    int y;
-
-    if (i == 0) {
-      y = 20;
-    } else {
-      y = 40 + (i - 1) * 12;
-    }
-
-    // Position number
-    tft.setTextSize(i == 0 ? 2 : 1);
-    tft.setTextColor(COLOR_TEXT);
-    tft.setCursor(2, y);
-    tft.print(i + 1);
-
-    if (i == 0) {
-      // Custom dot closer to the text-size-2 number
-      tft.fillCircle(13, y +12, 1, COLOR_TEXT);
-    } else {
-      // Normal font spacing is fine for places 2-4
-      tft.print("."); 
-    }
-    
-    // Normal-mode score
-    tft.setTextColor(COLOR_SELECT);
-    tft.setCursor(i == 0 ? 22 : 18, y);
-    tft.print(speedHS.normal[speedtestIndex][i]);
-
-    // Normal-mode initials
-    tft.setTextSize(1);
-    tft.setCursor(50, y);
-
-    if (speedNormalInitials[speedtestIndex][i][0] == '\0') {
-      tft.print("----");
-    } else {
-      tft.print(
-        speedNormalInitials[speedtestIndex][i]
-      );
-    }
-
-    // No-light score
-    tft.setTextSize(i == 0 ? 2 : 1);
-    tft.setTextColor(COLOR_PASTEL_YELLOW);
-    tft.setCursor(i == 0 ? 88 : 90, y);
-    tft.print(speedHS.noLight[speedtestIndex][i]);
-
-    // No-light initials
-    tft.setTextSize(1);
-    tft.setCursor(120, y);
-
-    if (speedNoLightInitials[speedtestIndex][i][0] == '\0') {
-      tft.print("----");
-    } else {
-      tft.print(
-        speedNoLightInitials[speedtestIndex][i]
-      );
-    }
-  }
-
-}
-
-// Simon Says leaderboard
-void drawSimonLeaderboard() {
-  tft.fillScreen(COLOR_BG);
-
-  // Title
-  tft.setTextColor(COLOR_SIMON);
-  tft.setTextSize(2);
-  tft.setCursor(2, 2);
-  tft.print("memoriests");
-
-  // Small medal icon, top-right corner
-  // Medal ribbons
-  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  
-  // Medal circle
-  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
-  // Medal center dot
-  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
-
-  // Print Highscores, 1st place larger font, 2nd-4th smaller font
-  tft.setTextSize(2);
-  
-  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
-    int y;
-
-    if (i == 0) {
-      tft.setTextSize(2); // First place
-      y = 20;
-    } else {
-      tft.setTextSize(1); // Places 2-4
-      y = 43 + (i-1) * 16;
-    } 
-
-    // Position number
-    tft.setTextColor(COLOR_TEXT);
-    tft.setCursor(2, y);
-    tft.print(i + 1);
-    tft.print(".");
-
-    // Normal Mode High Score
-    tft.setTextColor(COLOR_SELECT);
-    tft.setCursor(35, y);
-    tft.print(simonHS.normal[simonIndex][i]);
-
-    // No Light Mode High Score
-    tft.setTextColor(COLOR_PASTEL_YELLOW);
-    tft.setCursor(105, y);
-    tft.print(simonHS.noLight[simonIndex][i]);
-  }
-}
-
-// Reaction leaderboard
-void drawReactionLeaderboard() {
-  tft.fillScreen(COLOR_BG);
-
-  // Title
-  tft.setTextColor(COLOR_REACTION);
-  tft.setTextSize(2);
-  tft.setCursor(2, 2);
-  tft.print("pinglessest");
-
-  // Small medal icon, top-right corner
-  // Medal ribbons
-  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  
-  // Medal circle
-  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
-  // Medal center dot
-  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
-
-  // Print Highscores, 1st place larger font, 2nd-4th smaller font
-  tft.setTextSize(2);
-  
-  for (int i = 0; i < TOP_SCORE_COUNT; i++) {
-    int y;
-    if (i == 0) {
-      tft.setTextSize(2); // First place
-      y = 20;
-    } else {
-      tft.setTextSize(1); // Places 2-4
-      y = 43 + (i-1) * 16;
-    } 
-
-    // Position number
-    tft.setTextColor(COLOR_TEXT);
-    tft.setCursor(2, y);
-    tft.print(i + 1);
-    tft.print(".");
-
-    // Normal Mode High Score
-    tft.setTextColor(COLOR_SELECT);
-    tft.setCursor(35, y);
-    tft.print(reactionHS.normal[reactionIndex][i]);
-
-    // No Light Mode High Score
-    tft.setTextColor(COLOR_PASTEL_YELLOW);
-    tft.setCursor(105, y);
-    tft.print(reactionHS.noLight[reactionIndex][i]);
-  }
-}
-
-// ----- DRAW MENU SCREENS ----- //
-
-// Draw menu controls for select, highscores and back
-void drawMenuControls() {
-
-  // Bottom-right1 ✓ check mark
-  tft.drawLine(139, 75, 140, 77, COLOR_SELECT);
-  tft.drawLine(138, 75, 141, 77, COLOR_SELECT);
-  tft.drawLine(141, 77, 146, 72, COLOR_SELECT);
-  tft.drawLine(141, 77, 145, 72, COLOR_SELECT);
-
-  // Bottom-right2 ✗ back mark
-  tft.drawLine(152, 71, 158, 77, COLOR_BACK);
-  tft.drawLine(152, 72, 156, 76, COLOR_BACK);
-  tft.drawLine(156, 72, 152, 78, COLOR_BACK);
-  tft.drawLine(157, 72, 151, 78, COLOR_BACK);
-
-  // Small medal icon, top-right corner
-  // Medal ribbons
-  tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);  
-  // Medal circle
-  tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
-  // Medal center dot
-  tft.fillCircle(153, 10,  1,  COLOR_PASTEL_YELLOW);
-}
-
-// Speedtest difficulty menu
-void drawSpeedtestMenu() {
-
-  // Title, font, color, background
-  tft.fillScreen(COLOR_BG);
-  tft.setTextSize(2);
-  tft.setTextColor(COLOR_SPEEDTEST);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds(
-      "speedtest",
-      0, 0,
-      &x1, &y1,
-      &w, &h
-  );
-
-  // Title
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
-  tft.print("speedtest");
-
-  // Show up to four difficulties at a time
-  const int VISIBLE_ROWS = 4;
-
-  int firstVisible = getFirstVisibleItem(
-    speedtestIndex,
-    SPEEDTEST_COUNT,
-    VISIBLE_ROWS
-  );
-
-  // Difficulties + highscores
-  for (int row = 0; row < VISIBLE_ROWS; row++) {
-    int optionIndex = firstVisible + row;
-    // Stop if there are no more options
-    if (optionIndex >= SPEEDTEST_COUNT) {
-      break;
-    }
-
-    int y = 18 + row * 16;
-    char normal[12];
-    char noLight[12];
-
-    snprintf(
-      normal,
-      sizeof(normal),
-      "%d",
-      speedHS.normal[optionIndex][0]
-    );
-
-    snprintf(
-      noLight,
-      sizeof(noLight),
-      "%d",
-      speedHS.noLight[optionIndex][0]
-    );
-
-    if (optionIndex == speedtestIndex) {
-      tft.setTextSize(2);
-      tft.setTextColor(COLOR_SELECT);
-      tft.setCursor(0, y);
-      tft.print("> ");
-      tft.print(speedtestOptions[optionIndex]);
-
-    } else {
-      tft.setTextSize(1);
-      tft.setTextColor(COLOR_TEXT);
-      tft.setCursor(10, y);
-      tft.print(speedtestOptions[optionIndex]);
-    }
-
-    // Highscore text size depends on selection
-    int hsSize =
-      optionIndex == speedtestIndex ? 2 : 1;
-    tft.setTextSize(hsSize);
-    // Normal-mode first-place score
-    tft.setTextColor(COLOR_NORMAL_HS);
-    tft.setCursor(70, y);
-    tft.print(normal);
-  }
-  drawMenuControls();
-}
-
-// draw SimonSays difficulty menu
-void drawSimonMenu() {
-
-  // Title, font, color, background
-  tft.fillScreen(COLOR_BG);
-
-  tft.setTextSize(2);
-  tft.setTextColor(COLOR_SIMON);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds(
-    "simon says",
-    0, 0,
-    &x1, &y1,
-    &w, &h
-  );
-
-  // Title
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
-  tft.print("simon says");
-
-  // Number of menu rows shown at once
-  const int VISIBLE_ROWS = 4;
-
-  // Calculate the first visible menu option
-  int firstVisible = getFirstVisibleItem(
-    simonIndex,
-    SIMONSAYS_COUNT,
-    VISIBLE_ROWS
-  );
-
-  // Draw visible difficulty rows
-  for (int row = 0; row < VISIBLE_ROWS; row++) {
-
-    int optionIndex = firstVisible + row;
-
-    // Safety check
-    if (optionIndex >= SIMONSAYS_COUNT) {
-      break;
-    }
-
-    int y = 18 + row * 15;
-
-    char normal[12];
-
-    snprintf(
-      normal,
-      sizeof(normal),
-      "%d",
-      simonHS.normal[optionIndex][0]
-    );
-    
-    // print difficulty options and current top1 highscore
-    if (optionIndex == simonIndex) {
-      tft.setTextSize(2);
-      tft.setTextColor(COLOR_SELECT);
-      tft.setCursor(0, y);
-      tft.print("> ");
-      tft.print(simonOptions[optionIndex]);
-
-    } else {
-      tft.setTextSize(1);
-      tft.setTextColor(COLOR_TEXT);
-      tft.setCursor(10, y);
-
-      tft.print(simonOptions[optionIndex]);
-    }
-
-    int hsSize =
-      optionIndex == simonIndex ? 2 : 1;
-
-    tft.setTextSize(hsSize);
-
-    // Normal-mode first-place score
-    tft.setTextColor(COLOR_NORMAL_HS);
-    tft.setCursor(105, y);
-    tft.print(normal);
-  }
-
-  drawMenuControls();
-}
-
-// draw Reaction difficulty menu
-void drawReactionMenu() {
-
-  // Title, font, color, background
-  tft.fillScreen(COLOR_BG);
-  tft.setTextSize(2);
-  tft.setTextColor(COLOR_REACTION);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds("REACTION", 0, 0, &x1, &y1, &w, &h);
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
-  tft.print("reaction");
-
-  // Difficulties + highscores
-  for (int i = 0; i < REACTION_COUNT; i++) {
-    int y = 20 + (i * 20);
-    char normal[12];
-    char noLight[12];
-
-    snprintf(normal, sizeof(normal), "%lu", reactionHS.normal[i][0]);
-    snprintf(noLight, sizeof(noLight), "%lu", reactionHS.noLight[i][0]);
-
-    if (i == reactionIndex) {
-      tft.setTextSize(2);
-      tft.setTextColor(COLOR_SELECT);
-
-      char buffer[20];
-      sprintf(buffer, "> %s", reactionOptions[i]);
-
-      tft.setCursor(0, y);
-      tft.print(buffer);
-
-    } else {
-      tft.setTextSize(1);
-      tft.setTextColor(COLOR_TEXT);
-
-      tft.setCursor(10, y);
-      tft.print(reactionOptions[i]);
-    }
-      
-    // Highscore text size depending on selection 1 or 2
-    int hsSize =
-        (i == reactionIndex)
-            ? 2
-            : 1;
-    tft.setTextSize(hsSize);
-
-    // Normal mode highscore
-    tft.setTextColor(COLOR_NORMAL_HS);
-    tft.setCursor(100, y);
-    tft.print(normal);
-  }
-  drawMenuControls();
-}
-
-// draw Solo menu
-void drawSoloMenu() {
-
-  tft.fillScreen(COLOR_BG);
-  tft.setTextColor(COLOR_SOLO);
-  tft.setTextSize(2);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds("solo", 0, 0, &x1, &y1, &w, &h);
-  tft.setCursor((SCREEN_WIDTH - w) / 2, 2);
-  tft.print("solo JAM");
-  tft.setTextSize(2);
-
-  for (int i = 0; i < SOLO_COUNT; i++) {
-    int y = 20 + (i * 20);
-    if (i == soloIndex) {
-      tft.setTextColor(COLOR_SELECT);
-      char buffer[20];
-      sprintf(buffer, "> %s", soloOptions[i]);
-      tft.setCursor(0, y);
-      tft.print(buffer);
-    } else {
-      tft.setTextColor(COLOR_TEXT);
-      tft.setCursor(10, y);
-      tft.print(soloOptions[i]);
-    }
-  }
-
-  // Bottom-right1 ✓ check mark
-  tft.drawLine(139, 75, 141, 77, COLOR_SELECT);
-  tft.drawLine(141, 77, 146, 72, COLOR_SELECT);
-
-  // Bottom-right2 ✗ back mark
-  tft.drawLine(152, 71, 158, 78, COLOR_BACK);
-  tft.drawLine(158, 71, 152, 78, COLOR_BACK);
-}
-
-// draw Solo root note
-void drawSoloRoot() {
-
-    tft.fillRect(120, 0, 40, 16, COLOR_BG);
-
-    tft.setTextSize(2);
-    tft.setTextColor(COLOR_SOLO);
-
-    tft.setCursor(140, 0);
-    tft.print(ROOT_NAMES[soloRoot]);
-}
-
-// ----- MENU UPDATE FUNCTIONS ----- //
-
-// update main menu UI
 void updateMainMenu() {
   
   if (strumUpPressed()) {
     mainMenuIndex++;
 
-    if (mainMenuIndex >= MAIN_MENU_COUNT)
+    if (
+      mainMenuIndex >=
+      MAIN_MENU_COUNT
+    ) {
       mainMenuIndex = 0;
-      playTone(FX_BUZZER, MENU_SCALE_4[mainMenuIndex], 32);
+    }
+
+    playTone(
+      FX_BUZZER,
+      MENU_SCALE_4[mainMenuIndex],
+      32
+    );
+
     drawMainMenu();
   }
 
@@ -2384,9 +2667,14 @@ void updateMainMenu() {
 
     mainMenuIndex--;
 
-    if (mainMenuIndex < 0)
-      mainMenuIndex = MAIN_MENU_COUNT - 1;      
-      playTone(FX_BUZZER, MENU_SCALE_4[mainMenuIndex], 32);
+    if (mainMenuIndex < 0) {
+      mainMenuIndex = 
+      MAIN_MENU_COUNT - 1;
+    }
+    playTone(FX_BUZZER,
+      MENU_SCALE_4[mainMenuIndex],
+      32
+    );
     drawMainMenu();
   }
 
@@ -2409,7 +2697,6 @@ void updateMainMenu() {
   }
 }
 
-// update speedtest difficulty menu
 void updateSpeedtestMenu() {
   // If leaderboard is currently open
   if (speedLeaderboardOpen) {
@@ -2437,13 +2724,6 @@ void updateSpeedtestMenu() {
       speedLeaderboardOpen = false;
       drawSpeedtestMenu();
     }    
-    return;
-  }
-  
-  // Yellow opens leaderboard
-  if (yellowPressed()) {
-    speedLeaderboardOpen = true;
-    drawSpeedLeaderboard();
     return;
   }
 
@@ -2512,11 +2792,30 @@ void updateSpeedtestMenu() {
   }
 }
 
-// update SimonSays difficulty menu
 void updateSimonMenu() {
 
   // If the leaderboard is open, check for yellow button to close it
   if (simonLeaderboardOpen) {
+    if (strumUpPressed()) {
+      simonIndex++;
+
+      if (simonIndex >= SIMONSAYS_COUNT) {
+        simonIndex = 0;
+      }
+      drawSimonLeaderboard();
+    } 
+
+    if (strumDownPressed()) {
+      simonIndex--;
+
+      if (simonIndex < 0) {
+        simonIndex =
+          SIMONSAYS_COUNT -1;
+      }
+      
+      drawSimonLeaderboard();
+    }
+
     if (yellowPressed()) {
       simonLeaderboardOpen = false;
       drawSimonMenu();
@@ -2584,11 +2883,32 @@ void updateSimonMenu() {
   }
 }
 
-// update Reaction difficulty menu
 void updateReactionMenu() {
 
   // If the leaderboard is open, check for yellow button to close it
   if (reactionLeaderboardOpen) {
+
+    if (strumUpPressed());
+    reactionIndex++;
+
+    if (reactionIndex >=
+      REACTION_COUNT
+    ) {
+      reactionIndex = 0;
+    }
+
+    drawReactionLeaderboard();
+
+    if (strumDownPressed()) {
+      reactionIndex--;
+
+      if (reactionIndex < 0) {
+        reactionIndex = REACTION_COUNT -1;
+      }
+
+      drawReactionLeaderboard();
+    }
+
     if (yellowPressed()) {
       reactionLeaderboardOpen = false;
       drawReactionMenu();
@@ -2656,7 +2976,6 @@ void updateReactionMenu() {
   }
 }
 
-// update Solo difficulty menu
 void updateSoloMenu() {
 
   // Start Solo game
@@ -2690,190 +3009,9 @@ void updateSoloMenu() {
   }
 }
 
-// update menu LEDs based on button states
-void updateMenuLEDs() {
-  
-  // Fret LEDs
-  for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(
-      LED_PINS[i],
-      digitalRead(BUTTON_PINS[i]) == LOW ? HIGH : LOW
-    );
-  }
+// ------ 14. RUN GAME FUNCTIONS ----- //
 
-  // Strum-up LED
-  digitalWrite(
-    LED_STRUM_PINS[0],
-    digitalRead(STRUM_UP_PIN) == LOW ? HIGH : LOW
-  );
-
-  // Strum-down LED
-  digitalWrite(
-    LED_STRUM_PINS[1],
-    digitalRead(STRUM_DOWN_PIN) == LOW ? HIGH : LOW
-  );
-}
-
-// Update new highscore initials screen
-void updateInitialsEntry() {
-
-  // Next printable ASCII character
-  if (strumUpPressed()) {
-
-    initialsCharacter++;
-
-    if (initialsCharacter > 126) {
-      initialsCharacter = 32;
-    }
-
-    enteredInitials[initialsPosition] =
-      static_cast<char>(initialsCharacter);
-
-    playTone(
-      FX_BUZZER,
-      300 + initialsCharacter,
-      25
-    );
-
-    drawInitialsEntry();
-  }
-
-  // Previous printable ASCII character
-  if (strumDownPressed()) {
-
-    initialsCharacter--;
-
-    if (initialsCharacter < 32) {
-      initialsCharacter = 126;
-    }
-
-    enteredInitials[initialsPosition] =
-      static_cast<char>(initialsCharacter);
-
-    playTone(
-      FX_BUZZER,
-      300 + initialsCharacter,
-      25
-    );
-
-    drawInitialsEntry();
-  }
-
-  // Green confirms the current character
-  if (greenPressed()) {
-
-    playSelectSound();
-
-    // Move to the next character
-    if (initialsPosition < INITIAL_COUNT - 1) {
-
-      initialsPosition++;
-
-      initialsCharacter =
-        enteredInitials[initialsPosition];
-
-      drawInitialsEntry();
-
-    } else {
-
-      // Fourth character confirmed, save initials
-      enteredInitials[INITIAL_COUNT] = '\0';
-
-      if (pendingInitials != nullptr) {
-        strcpy(
-          pendingInitials,
-          enteredInitials
-        );
-      }
-
-      // Save every game's scores and initials
-      saveHighScores();
-
-      newHighScore = false;
-      pendingInitials = nullptr;
-
-      // Open the leaderboard for the game just played
-      if (currentGame == GAME_SPEEDTEST) {
-
-        speedLeaderboardOpen = true;
-        currentState = STATE_SPEEDTEST_MENU;
-
-      } else  if (currentGame == GAME_SIMON) {
-
-        simonLeaderboardOpen = true;
-        currentState = STATE_SIMON_MENU;
-      }
-    }
-  }
-
-  // Red returns to the previous character
-  if (redPressed()) {
-
-    if (initialsPosition > 0) {
-
-      playBackSound();
-
-      initialsPosition--;
-
-      initialsCharacter =
-        enteredInitials[initialsPosition];
-
-      drawInitialsEntry();
-    }
-  }
-
-  // Yellow fret toggles uppercase/lowercase
-  if (yellowPressed()) {
-    // A-Z -> a-z
-    if (
-      initialsCharacter >= 'A' &&
-      initialsCharacter <= 'Z'
-    ) {
-      initialsCharacter += 32;
-    } else if (
-      initialsCharacter >= 'a' &&
-      initialsCharacter <= 'z'
-    ) {
-      initialsCharacter -= 32;
-    }
-    enteredInitials[initialsPosition] =
-      static_cast<char>(initialsCharacter);
-
-      drawInitialsEntry();
-  } 
-
-  // Blue fret jumps to numbers and back to A
-  if (bluePressed()) {
-    // A-Z -> a-z
-    if (
-      initialsCharacter >= 'A' &&
-      initialsCharacter <= 'z'
-    ) {
-      initialsCharacter = '0';
-    } else if (
-      initialsCharacter < 'A' ||
-      initialsCharacter > 'z'
-    ) {
-      initialsCharacter = 'A';
-    }
-    enteredInitials[initialsPosition] =
-      static_cast<char>(initialsCharacter);
-
-      drawInitialsEntry();
-  } 
-
-  // Orange makes a space
-  if (orangePressed()) {
-    initialsCharacter = ' ';
-    enteredInitials[initialsPosition] =
-      static_cast<char>(initialsCharacter);
-    drawInitialsEntry();
-  }
-}
-
-// ----- RUN GAME FUNCTIONS ----- //
-
-// speedtest game
+  // A. SPEEDTEST     //
 void runSpeedtestGame() {
 
   currentState = STATE_PLAYING;
@@ -2915,12 +3053,12 @@ void runSpeedtestGame() {
       while (nextInput == lastInput);
         lastInput = nextInput;
 
-      if (queueSize < 60) {
+      if (queueSize < MAX_TARGET_QUEUE) {
           targetQueue[queueSize++] = nextInput;
       }
 
       if (useSound) {
-        if (nextInput < 5)
+        if (nextInput < FRET_COUNT)
           playTone(NOTE_BUZZER,
                   250 + (nextInput * 100),
                   50);
@@ -2929,7 +3067,7 @@ void runSpeedtestGame() {
       }
       if (useLight) {
 
-        if (nextInput < 5) {
+        if (nextInput < FRET_COUNT) {
 
           // Light the target fret
           digitalWrite(
@@ -2976,7 +3114,7 @@ void runSpeedtestGame() {
     }
 
     // Fret buttons
-    for (int i = 0; i < min(numInputs, 5); i++) {
+    for (int i = 0; i < min(numInputs, FRET_COUNT); i++) {
 
       if (digitalRead(BUTTON_PINS[i]) == LOW) {
 
@@ -3000,13 +3138,13 @@ void runSpeedtestGame() {
     }
 
       // Strum input (5+1 difficulty)
-      if (numInputs == 6) {
+      if (numInputs == FRET_AND_STRUM_INPUT_COUNT) {
 
           if (digitalRead(STRUM_UP_PIN) == LOW ||
               digitalRead(STRUM_DOWN_PIN) == LOW) {
 
               if (queueSize > 0 &&
-                  targetQueue[0] == 5) {
+                  targetQueue[0] == STRUM_INPUT_INDEX) {
 
                   for (int j = 0; j < queueSize - 1; j++)
                       targetQueue[j] = targetQueue[j + 1];
@@ -3093,7 +3231,7 @@ void runSpeedtestGame() {
   return;
 }
 
-// simon says game
+  // B. SIMON SAYS    //
 void runSimonsaysGame() {
 
   currentState = STATE_PLAYING;
@@ -3131,18 +3269,18 @@ void runSimonsaysGame() {
       int input = sequence[i];
       if (useLight) {
 
-        if (input < 5) {
+        if (input < FRET_COUNT) {
         
         digitalWrite(LED_PINS[input], HIGH);
         delay(250);
         digitalWrite(LED_PINS[input], LOW);
         } else {
-          for (int j = 0; j < 5; j++)
+          for (int j = 0; j < FRET_COUNT; j++)
                digitalWrite(LED_PINS[j], HIGH);
 
           delay(250);
 
-          for (int j = 0; j < 5; j++)
+          for (int j = 0; j < FRET_COUNT; j++)
                digitalWrite(LED_PINS[j], LOW);
         }
       }
@@ -3177,7 +3315,7 @@ void runSimonsaysGame() {
         }
 
         // fret buttons
-        for (int b = 0; b < min(numInputs, 5); b++) {
+        for (int b = 0; b < min(numInputs, FRET_COUNT); b++) {
 
           if (digitalRead(BUTTON_PINS[b]) == LOW) {
 
@@ -3207,7 +3345,7 @@ void runSimonsaysGame() {
           if (digitalRead(STRUM_UP_PIN) == LOW ||
               digitalRead(STRUM_DOWN_PIN) == LOW) {
 
-            pressed = 5;
+            pressed = STRUM_INPUT_INDEX;
 
             if(useSound) {
               playTone(NOTE_BUZZER, 1000, 100);
@@ -3325,14 +3463,13 @@ void runSimonsaysGame() {
   return;
 }
 
-// reaction game
+  // C. REACTION TIME //
 void runReactionGame() {
 
   currentState = STATE_PLAYING;
   currentGame = GAME_REACTION;
 
-  const int REACTION_ROUNDS = 3;
-  unsigned long reactionTimes[REACTION_ROUNDS];
+  unsigned long reactionTimes[REACTION_ROUNDS] = {};
 
   // Wait for release
   while (
@@ -3425,7 +3562,7 @@ void runReactionGame() {
     }
 
     // ----- START REACTION CUE ----- //
-    int targetFret = random(0, 5);
+    int targetFret = random(0, FRET_COUNT);
 
     // Change WAIT to GO, activate LEDs and play beep
     startReactionCue(targetFret);
@@ -3604,7 +3741,7 @@ void runReactionGame() {
   return;
 }
 
-// solo game
+  // D. SOLO-JAM      //
 void runSoloGame() {
 
   currentState = STATE_PLAYING;
@@ -3646,15 +3783,15 @@ void runSoloGame() {
     delay(1);
   }
 
+  turnOffAllInputLights();
+
   while (true) {
 
-    for (int fret = 0; fret < 5; fret++) {
+    for (int fret = 0; fret < FRET_COUNT; fret++) {
 
       if (digitalRead(BUTTON_PINS[fret]) == LOW) {
 
         lastActivity = millis();
-
-        int noteIndex = soloRoot + fret;
 
         int note;
 
@@ -3666,10 +3803,32 @@ void runSoloGame() {
           note = SOLO_BLUES[soloRoot][fret];
         }
 
-          playTone(NOTE_BUZZER, note, 200);
-        spawnNote(fret);
+        // Light the matching fret LED
+        digitalWrite(
+          LED_PINS[fret],
+          HIGH
+        );
 
-        while (digitalRead(BUTTON_PINS[fret]) == LOW);
+        playTone(
+          NOTE_BUZZER,
+          note,
+          200
+        );
+
+        spawnNote(fret);
+        
+        // Keep the LED on while the fret is held
+        while (
+          digitalRead(BUTTON_PINS[fret]) == LOW
+        ) {
+          delay(1);
+        }
+
+        // Turn it off when released
+        digitalWrite(
+          LED_PINS[fret],
+          LOW
+        );
       }
     }
 
@@ -3727,127 +3886,42 @@ void runSoloGame() {
   }
 }
 
-// ----- HARDWARE TEST & BOOT SEQUENCE ----- //
+// ----- 15. ARDUINO ENTRY POINTS - HARDWARE TEST & BOOT SEQUENCE ----- //
 
-// Startup test for fret and strum LEDs
-void playStartupFretSequence() {
-
-  // Make sure all fret LEDs begin off
-  for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], LOW);
-  }
-
-  // Make sure both strum LEDs begin off
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
-
-  // Blues-style note lengths
-  const int noteLengths[5] = {
-    180, // Green: medium
-    50, // Red: short
-    210, // Yellow: long
-    100, // Blue: short
-    280 // Orange: long ending
-  };
-
-  // Delay after each LED/note
-  const int noteGaps[5] = {
-    20,
-    40,
-    25,
-    60,
-    30
-  };
-
-  // Light fret LEDs one by one
-  for (int i = 0; i < FRET_COUNT; i++) {
-    // Check for Green + Orange held during startup -> mute sounds
-    if (
-      digitalRead(BUTTON_PINS[0]) == LOW &&
-      digitalRead(BUTTON_PINS[4]) == LOW  
-    ) { 
-      soundEnabled = false;
-      
-      noTone(NOTE_BUZZER);
-      noTone(FX_BUZZER);
-    }
-  
-      digitalWrite(LED_PINS[i], HIGH);
-
-      playTone(
-        NOTE_BUZZER,
-        SOLO_BLUES[2][i],
-        noteLengths[i]
-      );
-  
-      delay(noteLengths[i]);
-      digitalWrite(LED_PINS[i], LOW);
-      delay(noteGaps[i]);
-  }
-
-  // Light strum-up LED
-  digitalWrite(LED_STRUM_PINS[0], HIGH);
-  playTone(NOTE_BUZZER, 587, 180);
-  delay(200);
-  digitalWrite(LED_STRUM_PINS[0], LOW);
-  delay(50);
-
-  // Light strum-down LED
-  digitalWrite(LED_STRUM_PINS[1], HIGH);
-  playTone(NOTE_BUZZER, 698, 180);
-  delay(200);
-  digitalWrite(LED_STRUM_PINS[1], LOW);
-  delay(50);
-
-  // Light all fret LEDs together
-  for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], HIGH);
-  }
-
-  // Light both strum LEDs together
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], HIGH);
-  }
-
-  // Finishing sound
-  playTone(FX_BUZZER, 440, 300);
-  playTone(NOTE_BUZZER, 587, 300);
-
-  delay(500);
-
-/* 
-  for (int i = 0; i <5; i++) {
-    playTone(FX_BUZZER, 500 - 70 * i, 16);
-    delay(12);
-  }
-*/
-
-  // Turn off all fret LEDs
-  for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], LOW);
-  delay(50);
-  }
-
-  // Turn off both strum LEDs
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
-
-  noTone(FX_BUZZER);
-  noTone(NOTE_BUZZER);
-
-  while (digitalRead(BUTTON_PINS[0]) == LOW ||
-    digitalRead(BUTTON_PINS[1]) == LOW) {
-  delay(1);
-  }
-}
-
-// Boot machine
 void setup() {
 
   Serial.begin(115200);
   delay(500);
+
+  // Fret buttons
+  for (int i = 0; i < FRET_COUNT; i++) {
+    pinMode(BUTTON_PINS[i], INPUT_PULLUP);
+  }
+
+  // Strum buttons
+  pinMode(STRUM_UP_PIN, INPUT_PULLUP);
+  pinMode(STRUM_DOWN_PIN, INPUT_PULLUP);
+
+  // Fret LEDs
+  for (int i = 0; i < FRET_COUNT; i++) {
+    pinMode(LED_PINS[i], OUTPUT);
+    digitalWrite(LED_PINS[i], LOW);
+  }
+
+  // Strum LEDs
+  for (int i = 0; i < STRUM_LED_COUNT; i++) {
+    pinMode(LED_STRUM_PINS[i], OUTPUT);
+    digitalWrite(LED_STRUM_PINS[i], LOW);
+  }
+
+  // Buzzers
+  pinMode(NOTE_BUZZER, OUTPUT);
+  pinMode(FX_BUZZER, OUTPUT);
+
+  noTone(NOTE_BUZZER);
+  noTone(FX_BUZZER);
+
+  delay(20);
 
   Serial.println();
   Serial.println("POLYBAR ARCADE STARTING");
@@ -3858,6 +3932,31 @@ void setup() {
   } else {
     Serial.println("No valid highscore file loaded");
     resetHighScores();
+  }
+
+  // Optional HighScore Reset Combination red+yellow+orange
+  if (
+    digitalRead(BUTTON_PINS[0]) == LOW &&
+    digitalRead(BUTTON_PINS[2]) == LOW &&
+    digitalRead(BUTTON_PINS[4]) == LOW
+  ) {
+    resetHighScores();
+    saveHighScores();
+
+    Serial.println(
+      "All highscores reset"
+    );
+  }
+
+  // Optional Mute Combination red+blue
+  if (
+    digitalRead(BUTTON_PINS[1]) == LOW &&
+    digitalRead(BUTTON_PINS[3]) == LOW  
+  ) { 
+    soundEnabled = false;
+  
+    noTone(NOTE_BUZZER);
+    noTone(FX_BUZZER);
   }
 
   // Keep the known-working display initialization unchanged
@@ -3878,59 +3977,6 @@ void setup() {
   tft.begin();
   tft.setRotation(3);
   
-  // Fret buttons
-  for (int i = 0; i < FRET_COUNT; i++) {
-    pinMode(BUTTON_PINS[i], INPUT_PULLUP);
-  }
-
-  // Fret LEDs
-  for (int i = 0; i < FRET_COUNT; i++) {
-    pinMode(LED_PINS[i], OUTPUT);
-    digitalWrite(LED_PINS[i], LOW);
-  }
-
-  // Strum buttons
-  pinMode(STRUM_UP_PIN, INPUT_PULLUP);
-  pinMode(STRUM_DOWN_PIN, INPUT_PULLUP);
-
-  // Strum LEDs
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    pinMode(LED_STRUM_PINS[i], OUTPUT);
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
-
-  delay(20);
-
-  if (
-    digitalRead(BUTTON_PINS[1]) == LOW &&
-    digitalRead(BUTTON_PINS[3]) == LOW
-  ) {
-    resetHighScores();
-    saveHighScores();
-
-    Serial.println(
-      "All highscores reset"
-    );
-  }
-
-  // Check for Green + Orange held during startup -> mute sounds
-  if (
-    digitalRead(BUTTON_PINS[0]) == LOW &&
-    digitalRead(BUTTON_PINS[4]) == LOW  
-  ) { 
-    soundEnabled = false;
-  
-    noTone(NOTE_BUZZER);
-    noTone(FX_BUZZER);
-  }
-
-  // Buzzers
-  pinMode(NOTE_BUZZER, OUTPUT);
-  pinMode(FX_BUZZER, OUTPUT);
-
-  noTone(NOTE_BUZZER);
-  noTone(FX_BUZZER);
-
   // Run the startup hardware test
   playStartupFretSequence();
 
@@ -3951,7 +3997,6 @@ void setup() {
   drawSplashScreen();
 }
 
-// Main loop
 void loop() {
 
   // Check for state changes and update the display accordingly
