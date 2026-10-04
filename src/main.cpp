@@ -13,6 +13,19 @@
 #define SCREEN_WIDTH 160
 #define SCREEN_HEIGHT 80
 
+// ----- FLASH STORAGE ----- //
+#include <stddef.h>
+#include <stdio.h>
+#include <string>
+
+// Reserve 64 KB of onboard flash for LittleFS
+#define RP2040_FS_SIZE_KB 64
+
+// Do not erase saved scores automatically
+#define FORCE_REFORMAT false
+
+#include <LittleFS_Mbed_RP2040.h>
+
 // ----- HARDWARE OBJECTS ----- //
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
@@ -178,7 +191,7 @@ const int MENU_SCALE_3[3] = {
     311 // Eb
 };
 
-// constant helpers
+// Global constant helpers
 constexpr int FRET_COUNT = 5;
 constexpr int STRUM_LED_COUNT = 2;
 constexpr int REACTION_ROUNDS = 3;
@@ -258,14 +271,21 @@ const char* ROOT_NAMES[6] = {
   "D6"
 };
 
-// ----- STRUCTURES AND ENUMS ----- //
+// ----- STRUCTURES AND ENUMS *LEADERBOARD TRACKING AND SAVING* ----- //
 
-// High score tracking variables
+// High score tracking variables & constants
 struct HighScores {
   int normal[MAX_DIFFICULTIES][TOP_SCORE_COUNT];
   int noLight[MAX_DIFFICULTIES][TOP_SCORE_COUNT];
 };
 
+const uint32_t SCORE_FILE_MAGIC = 0x50424152;
+// ASCII-like identifier for "PBAR"
+
+const uint16_t SCORE_FILE_VERSION = 1;
+
+const char SCORE_FILE_PATH[] =
+  MBED_LITTLEFS_FILE_PREFIX "/polybar_scores.bin";
 
 // Initials for Speedtest normal mode
 char speedNormalInitials
@@ -314,6 +334,60 @@ int initialsCharacter = 'A';
 // Points to the initials slot being edited
 char* pendingInitials = nullptr;
 
+struct ScoreSaveData {
+
+  uint32_t magic;
+  uint16_t version;
+  uint16_t dataSize;
+
+  // Scores
+  HighScores speedScores;
+  HighScores simonScores;
+  HighScores reactionScores;
+
+  // Speedtest initials
+  char speedNormalNames
+    [MAX_DIFFICULTIES]
+    [TOP_SCORE_COUNT]
+    [INITIAL_COUNT + 1];
+
+  char speedNoLightNames
+    [MAX_DIFFICULTIES]
+    [TOP_SCORE_COUNT]
+    [INITIAL_COUNT + 1];
+
+  // Simon initials
+  char simonNormalNames
+    [MAX_DIFFICULTIES]
+    [TOP_SCORE_COUNT]
+    [INITIAL_COUNT + 1];
+
+  char simonNoLightNames
+    [MAX_DIFFICULTIES]
+    [TOP_SCORE_COUNT]
+    [INITIAL_COUNT + 1];
+
+  // Reaction initials
+  char reactionNormalNames
+    [MAX_DIFFICULTIES]
+    [TOP_SCORE_COUNT]
+    [INITIAL_COUNT + 1];
+
+  char reactionNoLightNames
+    [MAX_DIFFICULTIES]
+    [TOP_SCORE_COUNT]
+    [INITIAL_COUNT + 1];
+
+  // Used to detect corrupted flash data
+  uint32_t checksum;
+};
+
+// High score instances
+HighScores speedHS;
+HighScores simonHS;
+HighScores reactionHS;
+HighScores soloHS;
+
 // Rolling scrolling for every menu
 int getFirstVisibleItem(
   int selectedIndex,
@@ -341,11 +415,6 @@ int getFirstVisibleItem(
   return firstVisible;
 }
 
-// High score instances
-HighScores speedHS;
-HighScores simonHS;
-HighScores reactionHS;
-HighScores soloHS;
 
 // Music note variables
 struct MusicNote {
@@ -478,6 +547,15 @@ bool strumUpPressed();
 bool strumDownPressed();
 bool menuReady();
 
+// HIGHSCORE SAVING, LOADING & RESETTING
+uint32_t calculateScoreChecksum(
+  const ScoreSaveData& data
+);
+
+bool initializeScoreStorage();
+bool loadHighScores();
+bool saveHighScores();
+void resetHighScores();
 
 // ----- GLOBAL STATE VARIABLES ----- //
 
@@ -532,6 +610,11 @@ bool insertTopReactionTime(
 
   return false;
 }
+
+// Global filesystem for leaderboards
+LittleFS_MBED* scoreFileSystem = nullptr;
+
+bool scoreStorageReady = false;
 
 // Global function to insert a new reaction time into the top reaction times array
 bool insertTopReactionTime(
@@ -660,10 +743,375 @@ int insertTopScore(
   return -1;
 }
 
+// ----- This checksum helps detect an incomplete or damaged highscore save file: ---- //
 // Leaderboard open state helper
 bool speedLeaderboardOpen = false;
 bool simonLeaderboardOpen = false;
 bool reactionLeaderboardOpen = false;
+
+uint32_t calculateScoreChecksum(
+  const ScoreSaveData& data
+) {
+  const uint8_t* bytes =
+    reinterpret_cast<const uint8_t*>(&data);
+
+  const size_t checksumOffset =
+    offsetof(ScoreSaveData, checksum);
+
+  uint32_t hash = 2166136261UL;
+
+  for (size_t i = 0; i < checksumOffset; i++) {
+    hash ^= bytes[i];
+    hash *= 16777619UL;
+  }
+
+  return hash;
+}
+
+void resetHighScores() {
+
+  memset(&speedHS, 0, sizeof(speedHS));
+  memset(&simonHS, 0, sizeof(simonHS));
+  memset(&reactionHS, 0, sizeof(reactionHS));
+
+  memset(
+    speedNormalInitials,
+    0,
+    sizeof(speedNormalInitials)
+  );
+
+  memset(
+    speedNoLightInitials,
+    0,
+    sizeof(speedNoLightInitials)
+  );
+
+  memset(
+    simonNormalInitials,
+    0,
+    sizeof(simonNormalInitials)
+  );
+
+  memset(
+    simonNoLightInitials,
+    0,
+    sizeof(simonNoLightInitials)
+  );
+
+  memset(
+    reactionNormalInitials,
+    0,
+    sizeof(reactionNormalInitials)
+  );
+
+  memset(
+    reactionNoLightInitials,
+    0,
+    sizeof(reactionNoLightInitials)
+  );
+}
+
+// Flash initialization function
+bool initializeScoreStorage() {
+
+  scoreFileSystem = new LittleFS_MBED();
+
+  if (scoreFileSystem == nullptr) {
+    Serial.println(
+      "ERROR: Could not create LittleFS object"
+    );
+
+    scoreStorageReady = false;
+    return false;
+  }
+
+  if (!scoreFileSystem->init()) {
+    Serial.println(
+      "ERROR: LittleFS mount failed"
+    );
+
+    scoreStorageReady = false;
+    return false;
+  }
+
+  scoreStorageReady = true;
+
+  Serial.println(
+    "LittleFS score storage ready"
+  );
+
+  return true;
+}
+
+// Load Highscores
+bool loadHighScores() {
+
+  if (!scoreStorageReady) {
+    Serial.println(
+      "Scores not loaded: flash unavailable"
+    );
+
+    resetHighScores();
+    return false;
+  }
+
+  FILE* file = fopen(
+    SCORE_FILE_PATH,
+    "rb"
+  );
+
+  if (file == nullptr) {
+
+    Serial.println(
+      "No score file found, using empty scores"
+    );
+
+    resetHighScores();
+    return false;
+  }
+
+  ScoreSaveData data = {};
+
+  size_t bytesRead = fread(
+    &data,
+    1,
+    sizeof(data),
+    file
+  );
+
+  fclose(file);
+
+  if (bytesRead != sizeof(data)) {
+
+    Serial.println(
+      "Score file has incorrect size"
+    );
+
+    resetHighScores();
+    return false;
+  }
+
+  if (data.magic != SCORE_FILE_MAGIC) {
+
+    Serial.println(
+      "Score file has invalid identifier"
+    );
+
+    resetHighScores();
+    return false;
+  }
+
+  if (data.version != SCORE_FILE_VERSION) {
+
+    Serial.println(
+      "Score file version is incompatible"
+    );
+
+    resetHighScores();
+    return false;
+  }
+
+  if (data.dataSize != sizeof(ScoreSaveData)) {
+
+    Serial.println(
+      "Score structure size has changed"
+    );
+
+    resetHighScores();
+    return false;
+  }
+
+  uint32_t expectedChecksum =
+    calculateScoreChecksum(data);
+
+  if (data.checksum != expectedChecksum) {
+
+    Serial.println(
+      "Score file checksum failed"
+    );
+
+    resetHighScores();
+    return false;
+  }
+
+  // Restore score structures
+  speedHS = data.speedScores;
+  simonHS = data.simonScores;
+  reactionHS = data.reactionScores;
+
+  // Restore Speedtest initials
+  memcpy(
+    speedNormalInitials,
+    data.speedNormalNames,
+    sizeof(speedNormalInitials)
+  );
+
+  memcpy(
+    speedNoLightInitials,
+    data.speedNoLightNames,
+    sizeof(speedNoLightInitials)
+  );
+
+  // Restore Simon initials
+  memcpy(
+    simonNormalInitials,
+    data.simonNormalNames,
+    sizeof(simonNormalInitials)
+  );
+
+  memcpy(
+    simonNoLightInitials,
+    data.simonNoLightNames,
+    sizeof(simonNoLightInitials)
+  );
+
+  // Restore Reaction initials
+  memcpy(
+    reactionNormalInitials,
+    data.reactionNormalNames,
+    sizeof(reactionNormalInitials)
+  );
+
+  memcpy(
+    reactionNoLightInitials,
+    data.reactionNoLightNames,
+    sizeof(reactionNoLightInitials)
+  );
+
+  Serial.println(
+    "Highscores loaded from flash"
+  );
+
+  return true;
+}
+
+// Save Highscore
+bool saveHighScores() {
+
+  if (!scoreStorageReady) {
+
+    Serial.println(
+      "Scores not saved: flash unavailable"
+    );
+
+    return false;
+  }
+
+  ScoreSaveData data = {};
+
+  data.magic = SCORE_FILE_MAGIC;
+  data.version = SCORE_FILE_VERSION;
+  data.dataSize = sizeof(ScoreSaveData);
+
+  // Copy score structures
+  data.speedScores = speedHS;
+  data.simonScores = simonHS;
+  data.reactionScores = reactionHS;
+
+  // Copy Speedtest initials
+  memcpy(
+    data.speedNormalNames,
+    speedNormalInitials,
+    sizeof(speedNormalInitials)
+  );
+
+  memcpy(
+    data.speedNoLightNames,
+    speedNoLightInitials,
+    sizeof(speedNoLightInitials)
+  );
+
+  // Copy Simon initials
+  memcpy(
+    data.simonNormalNames,
+    simonNormalInitials,
+    sizeof(simonNormalInitials)
+  );
+
+  memcpy(
+    data.simonNoLightNames,
+    simonNoLightInitials,
+    sizeof(simonNoLightInitials)
+  );
+
+  // Copy Reaction initials
+  memcpy(
+    data.reactionNormalNames,
+    reactionNormalInitials,
+    sizeof(reactionNormalInitials)
+  );
+
+  memcpy(
+    data.reactionNoLightNames,
+    reactionNoLightInitials,
+    sizeof(reactionNoLightInitials)
+  );
+
+  data.checksum =
+    calculateScoreChecksum(data);
+
+  // Write temporary file first
+  const char temporaryPath[] =
+    MBED_LITTLEFS_FILE_PREFIX
+    "/polybar_scores.tmp";
+
+  FILE* file = fopen(
+    temporaryPath,
+    "wb"
+  );
+
+  if (file == nullptr) {
+
+    Serial.println(
+      "ERROR: Could not open temporary score file"
+    );
+
+    return false;
+  }
+
+  size_t bytesWritten = fwrite(
+    &data,
+    1,
+    sizeof(data),
+    file
+  );
+
+  fflush(file);
+  fclose(file);
+
+  if (bytesWritten != sizeof(data)) {
+
+    Serial.println(
+      "ERROR: Incomplete score write"
+    );
+
+    remove(temporaryPath);
+    return false;
+  }
+
+  // Remove previous valid file
+  remove(SCORE_FILE_PATH);
+
+  // Rename completed temporary file
+  if (
+    rename(
+      temporaryPath,
+      SCORE_FILE_PATH
+    ) != 0
+  ) {
+    Serial.println(
+      "ERROR: Could not finalize score file"
+    );
+
+    return false;
+  }
+
+  Serial.println(
+    "Highscores saved to flash"
+  );
+
+  return true;
+}
 
 // ----- SOUND FUNCTIONS ----- //
 
@@ -980,14 +1428,17 @@ void drawMainMenu() {
   }
 
   // Bottom-right1 ✓ check mark
-  tft.drawLine(2, 75, 4, 77, COLOR_SELECT);
-  tft.drawLine(4, 77, 9, 72, COLOR_SELECT);
+  tft.drawLine(3, 75, 4, 77, COLOR_SELECT);
+  tft.drawLine(2, 75, 5, 77, COLOR_SELECT);
+  tft.drawLine(5, 77, 10, 72, COLOR_SELECT);
+  tft.drawLine(5, 77, 9, 72, COLOR_SELECT);
 
   // Bottom-right2 ✗ back mark
-  tft.drawLine(152, 71, 158, 78, COLOR_BACK);
-  tft.drawLine(158, 71, 152, 78, COLOR_BACK);
+  tft.drawLine(152, 71, 158, 77, COLOR_BACK);
+  tft.drawLine(152, 72, 156, 76, COLOR_BACK);
+  tft.drawLine(156, 72, 152, 78, COLOR_BACK);
+  tft.drawLine(157, 72, 151, 78, COLOR_BACK);
 }
-
 
 // ----- Draw Game Screens ----- //
 
@@ -1619,18 +2070,21 @@ void drawReactionLeaderboard() {
 void drawMenuControls() {
 
   // Bottom-right1 ✓ check mark
-  tft.drawLine(139, 75, 141, 77, COLOR_SELECT);
+  tft.drawLine(139, 75, 140, 77, COLOR_SELECT);
+  tft.drawLine(138, 75, 141, 77, COLOR_SELECT);
   tft.drawLine(141, 77, 146, 72, COLOR_SELECT);
+  tft.drawLine(141, 77, 145, 72, COLOR_SELECT);
 
   // Bottom-right2 ✗ back mark
-  tft.drawLine(152, 71, 158, 78, COLOR_BACK);
-  tft.drawLine(158, 71, 152, 78, COLOR_BACK);
+  tft.drawLine(152, 71, 158, 77, COLOR_BACK);
+  tft.drawLine(152, 72, 156, 76, COLOR_BACK);
+  tft.drawLine(156, 72, 152, 78, COLOR_BACK);
+  tft.drawLine(157, 72, 151, 78, COLOR_BACK);
 
   // Small medal icon, top-right corner
   // Medal ribbons
   tft.drawLine(149, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);
-  
+  tft.drawLine(157, 2, 153, 7, COLOR_PASTEL_YELLOW);  
   // Medal circle
   tft.drawCircle(153, 10, 4, COLOR_PASTEL_YELLOW);
   // Medal center dot
@@ -2331,6 +2785,9 @@ void updateInitialsEntry() {
           enteredInitials
         );
       }
+
+      // Save every game's scores and initials
+      saveHighScores();
 
       newHighScore = false;
       pendingInitials = nullptr;
@@ -3390,6 +3847,18 @@ void playStartupFretSequence() {
 void setup() {
 
   Serial.begin(115200);
+  delay(500);
+
+  Serial.println();
+  Serial.println("POLYBAR ARCADE STARTING");
+  Serial.println("Initializing score storage...");
+
+  if (initializeScoreStorage()) {
+    loadHighScores();
+  } else {
+    Serial.println("No valid highscore file loaded");
+    resetHighScores();
+  }
 
   // Keep the known-working display initialization unchanged
   tft.begin();
@@ -3408,19 +3877,7 @@ void setup() {
 
   tft.begin();
   tft.setRotation(3);
-
-  // Check for Green + Orange held during startup -> mute sounds
-  if (
-    digitalRead(BUTTON_PINS[0]) == LOW &&
-    digitalRead(BUTTON_PINS[4]) == LOW  
-  ) { 
-    soundEnabled = false;
   
-    noTone(NOTE_BUZZER);
-    noTone(FX_BUZZER);
-  }
-  
-
   // Fret buttons
   for (int i = 0; i < FRET_COUNT; i++) {
     pinMode(BUTTON_PINS[i], INPUT_PULLUP);
@@ -3440,6 +3897,31 @@ void setup() {
   for (int i = 0; i < STRUM_LED_COUNT; i++) {
     pinMode(LED_STRUM_PINS[i], OUTPUT);
     digitalWrite(LED_STRUM_PINS[i], LOW);
+  }
+
+  delay(20);
+
+  if (
+    digitalRead(BUTTON_PINS[1]) == LOW &&
+    digitalRead(BUTTON_PINS[3]) == LOW
+  ) {
+    resetHighScores();
+    saveHighScores();
+
+    Serial.println(
+      "All highscores reset"
+    );
+  }
+
+  // Check for Green + Orange held during startup -> mute sounds
+  if (
+    digitalRead(BUTTON_PINS[0]) == LOW &&
+    digitalRead(BUTTON_PINS[4]) == LOW  
+  ) { 
+    soundEnabled = false;
+  
+    noTone(NOTE_BUZZER);
+    noTone(FX_BUZZER);
   }
 
   // Buzzers
