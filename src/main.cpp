@@ -5,6 +5,12 @@
 #include <Adafruit_ILI9341.h> // #include <Adafruit_ST7735.h>
 #include <SPI.h>
 
+#ifdef WOKWI_SIMULATION
+  #include <Adafruit_NeoPixel.h>
+#else
+  #include <Adafruit_DotStar.h>
+#endif
+
 // ----- FLASH STORAGE ----- //
 
 #include <stddef.h>
@@ -56,29 +62,54 @@ constexpr uint8_t BUTTON_PINS[FRET_COUNT] = {
   9   // Orange
 };
 
-constexpr uint8_t LED_PINS[FRET_COUNT] = {
-  2,   // Green
-  4,   // Red
-  6,   // Yellow
-  8,   // Blue
-  10   // Orange
-};
-
 constexpr uint8_t STRUM_UP_PIN = 27;
 constexpr uint8_t STRUM_DOWN_PIN = 28;
 
-constexpr uint8_t LED_STRUM_PINS[STRUM_LED_COUNT] = {
-  22,  // Cyan, strum up
-  21   // Violet, strum down
-};
+constexpr uint8_t RGB_NEOPIXEL_PIN = 11; // for simulation
+// constexpr uint8_t RGB_DATA_PIN = 11;  // for physical build
+// constexpr uint8_t RGB_CLOCK_PIN = 12; // for physical build
 
 constexpr uint8_t NOTE_BUZZER = 15;
 constexpr uint8_t FX_BUZZER = 26;
 
+constexpr uint8_t RGB_BRIGHTNESS = 100;
+
+constexpr int FRET_RGB_START = 0;
+constexpr int RGB_GREEN_FRET = 0;
+constexpr int RGB_RED_FRET = 1;
+constexpr int RGB_YELLOW_FRET = 2;
+constexpr int RGB_BLUE_FRET = 3;
+constexpr int RGB_ORANGE_FRET = 4;
+
+constexpr int RGB_STRUM_UP = 5;
+constexpr int RGB_STRUM_DOWN = 6;
+
+constexpr int RGB_LED_COUNT = 7;
+
 // ----- 4. HARDWARE OBJECTS ----- //
 
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
+
 LittleFS_MBED* scoreFileSystem = nullptr;
+
+#ifdef WOKWI_SIMULATION
+
+Adafruit_NeoPixel rgbLeds(
+  RGB_LED_COUNT,
+  RGB_NEOPIXEL_PIN,
+  NEO_GRB + NEO_KHZ800
+);
+
+#else
+
+Adafruit_DotStar rgbLeds(
+  RGB_LED_COUNT,
+  RGB_DATA_PIN,
+  RGB_CLOCK_PIN,
+  DOTSTAR_BRG
+);
+
+#endif
 
 // ----- 5. THEME COLORS ----- // 
 
@@ -123,6 +154,42 @@ const uint16_t COLOR_FRET2    = ILI9341_RED;    // Fret2: red
 const uint16_t COLOR_FRET3    = ILI9341_YELLOW; // Fret3: yellow
 const uint16_t COLOR_FRET4    = ILI9341_BLUE;   // Fret4: blue
 const uint16_t COLOR_FRET5    = ILI9341_ORANGE; // Fret5: orange
+
+  // RGB LED COLORS //
+const uint32_t LED_COLOR_GREEN =
+  rgbLeds.Color(0, 255, 80);
+
+const uint32_t LED_COLOR_RED =
+  rgbLeds.Color(255, 30, 50);
+
+const uint32_t LED_COLOR_YELLOW =
+  rgbLeds.Color(255, 190, 40);
+
+const uint32_t LED_COLOR_BLUE =
+  rgbLeds.Color(40, 100, 255);
+
+const uint32_t LED_COLOR_ORANGE =
+  rgbLeds.Color(255, 90, 10);
+
+const uint32_t LED_COLOR_TURQUOISE =
+  rgbLeds.Color(64, 224, 208);
+
+const uint32_t LED_COLOR_PINK =
+  rgbLeds.Color(255, 105, 180);
+
+const uint32_t LED_COLOR_LAVENDER =
+  rgbLeds.Color(190, 140, 255);
+
+const uint32_t LED_COLOR_OFF =
+  rgbLeds.Color(0, 0, 0);
+
+const uint32_t FRET_RGB_COLORS[FRET_COUNT] = {
+  rgbLeds.Color(0, 255, 100),   // Green fret
+  rgbLeds.Color(255, 40, 70),   // Red fret
+  rgbLeds.Color(255, 220, 80),  // Yellow fret
+  rgbLeds.Color(40, 100, 255),  // Blue fret
+  rgbLeds.Color(255, 90, 20)    // Orange fret
+};
 
 // ----- 6. MUSIC NOTE FREQUENCIES ----- //
 
@@ -702,35 +769,61 @@ bool strumDownPressed() {
   // C. HARDWARE & LED FUNCTIONS //
 
 void turnOffAllInputLights() {
-  for (int i= 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], LOW);
-  }
-  for (int i= 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
+  rgbLeds.clear();
+  rgbLeds.show();
 }
 
 void updateMenuLEDs() {
-  
-  // Fret LEDs
+
   for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(
-      LED_PINS[i],
-      digitalRead(BUTTON_PINS[i]) == LOW ? HIGH : LOW
-    );
+
+    if (
+      digitalRead(BUTTON_PINS[i]) == LOW
+    ) {
+      rgbLeds.setPixelColor(
+        i,
+        FRET_RGB_COLORS[i]
+      );
+    } else {
+      rgbLeds.setPixelColor(
+        i,
+        LED_COLOR_OFF
+      );
+    }
   }
 
   // Strum-up LED
-  digitalWrite(
-    LED_STRUM_PINS[0],
-    digitalRead(STRUM_UP_PIN) == LOW ? HIGH : LOW
-  );
+  if (
+    digitalRead(STRUM_UP_PIN) == LOW
+  ) {
+    rgbLeds.setPixelColor(
+      RGB_STRUM_UP,
+      LED_COLOR_TURQUOISE
+    );
+  } else {
+    rgbLeds.setPixelColor(
+      RGB_STRUM_UP,
+      LED_COLOR_OFF
+    );
+  }
 
   // Strum-down LED
-  digitalWrite(
-    LED_STRUM_PINS[1],
-    digitalRead(STRUM_DOWN_PIN) == LOW ? HIGH : LOW
-  );
+  if (
+    digitalRead(STRUM_DOWN_PIN) == LOW
+  ) {
+    rgbLeds.setPixelColor(
+      RGB_STRUM_DOWN,
+      LED_COLOR_PINK
+    );
+  } else {
+    rgbLeds.setPixelColor(
+      RGB_STRUM_DOWN,
+      LED_COLOR_OFF
+    );
+  }
+
+  // Send all changes together
+  rgbLeds.show();
 }
 
 void waitForGreenPress() {
@@ -752,13 +845,26 @@ void playStartupFretSequence() {
 
   // Make sure all fret LEDs begin off
   for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], LOW);
+    rgbLeds.setPixelColor(
+      i,
+      LED_COLOR_OFF
+    );
+
+    rgbLeds.show();
   }
 
   // Make sure both strum LEDs begin off
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
+  rgbLeds.setPixelColor(
+    RGB_STRUM_UP,
+    LED_COLOR_OFF
+  );
+
+  rgbLeds.setPixelColor(
+    RGB_STRUM_UP,
+    LED_COLOR_OFF
+  );
+
+  rgbLeds.show();
 
   // Blues-style note lengths
   const int noteLengths[FRET_COUNT] = {
@@ -791,42 +897,94 @@ void playStartupFretSequence() {
       noTone(FX_BUZZER);
     }
   
-      digitalWrite(LED_PINS[i], HIGH);
+    rgbLeds.setPixelColor(
+      i,
+      FRET_RGB_COLORS[i]
+    );
 
-      playTone(
-        NOTE_BUZZER,
-        SOLO_BLUES[2][i],
-        noteLengths[i]
-      );
+    rgbLeds.show();
+
+    playTone(
+      NOTE_BUZZER,
+      SOLO_BLUES[2][i],
+      noteLengths[i]
+    );
   
-      delay(noteLengths[i]);
-      digitalWrite(LED_PINS[i], LOW);
-      delay(noteGaps[i]);
+    delay(noteLengths[i]);
+    rgbLeds.setPixelColor(
+      i,
+      LED_COLOR_OFF
+    );
+
+    rgbLeds.show();
+
+    delay(noteGaps[i]);
   }
 
   // Light strum-up LED
-  digitalWrite(LED_STRUM_PINS[0], HIGH);
+  rgbLeds.setPixelColor(
+    RGB_STRUM_UP,
+    LED_COLOR_TURQUOISE
+  );
+
+  rgbLeds.show();
+
   playTone(NOTE_BUZZER, 587, 180);
+
   delay(200);
-  digitalWrite(LED_STRUM_PINS[0], LOW);
+
+  rgbLeds.setPixelColor(
+    RGB_STRUM_UP,
+    LED_COLOR_OFF
+  );
+
+  rgbLeds.show();
+
   delay(50);
 
   // Light strum-down LED
-  digitalWrite(LED_STRUM_PINS[1], HIGH);
+  rgbLeds.setPixelColor(
+    RGB_STRUM_DOWN,
+    LED_COLOR_PINK
+  );
+
+  rgbLeds.show();
+
   playTone(NOTE_BUZZER, 698, 180);
+
   delay(200);
-  digitalWrite(LED_STRUM_PINS[1], LOW);
+
+  rgbLeds.setPixelColor(
+    RGB_STRUM_DOWN,
+    LED_COLOR_OFF
+  );
+
+  rgbLeds.show();
+
   delay(50);
 
   // Light all fret LEDs together
   for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], HIGH);
+    rgbLeds.setPixelColor(
+      i,
+      FRET_RGB_COLORS[i]
+    );
   }
 
+  rgbLeds.show();
+
   // Light both strum LEDs together
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], HIGH);
-  }
+  rgbLeds.setPixelColor(
+    RGB_STRUM_UP,
+    LED_COLOR_TURQUOISE
+  );
+
+  rgbLeds.setPixelColor(
+    RGB_STRUM_DOWN,
+    LED_COLOR_PINK
+  );
+
+rgbLeds.show();
 
   // Finishing sound
   playTone(FX_BUZZER, 440, 300);
@@ -841,16 +999,9 @@ void playStartupFretSequence() {
   }
 */
 
-  // Turn off all fret LEDs
-  for (int i = 0; i < FRET_COUNT; i++) {
-    digitalWrite(LED_PINS[i], LOW);
-  delay(50);
-  }
-
-  // Turn off both strum LEDs
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
+  // Turn off all 7 fret LEDs
+  rgbLeds.clear();
+  rgbLeds.show();
 
   noTone(FX_BUZZER);
   noTone(NOTE_BUZZER);
@@ -2346,17 +2497,26 @@ void startReactionCue(int targetFret) {
   // Visual cue
   if (useLight) {
     if (reactionIndex == 0) {
+
       // Simple mode accepts any fret
       for (int i = 0; i < FRET_COUNT; i++) {
-        digitalWrite(LED_PINS[i], HIGH);
+        rgbLeds.setPixelColor(
+          i,
+          FRET_RGB_COLORS[i]
+        );
       }
 
+      rgbLeds.show();
+
     } else {
+
       // Chaos mode requires the target fret
-      digitalWrite(
-        LED_PINS[targetFret],
-        HIGH
+      rgbLeds.setPixelColor(
+        targetFret,
+        FRET_RGB_COLORS[targetFret]
       );
+
+      rgbLeds.show();
     }
   }
 
@@ -2888,31 +3048,34 @@ void updateReactionMenu() {
   // If the leaderboard is open, check for yellow button to close it
   if (reactionLeaderboardOpen) {
 
-    if (strumUpPressed());
-    reactionIndex++;
+    if (strumUpPressed()) {
 
-    if (reactionIndex >=
-      REACTION_COUNT
-    ) {
+      reactionIndex++;
+
+    if (reactionIndex >= REACTION_COUNT) {
       reactionIndex = 0;
     }
 
     drawReactionLeaderboard();
 
-    if (strumDownPressed()) {
-      reactionIndex--;
+  }
 
-      if (reactionIndex < 0) {
-        reactionIndex = REACTION_COUNT -1;
-      }
+  if (strumDownPressed()) {
 
-      drawReactionLeaderboard();
+    reactionIndex--;
+
+    if (reactionIndex < 0) {
+      reactionIndex = REACTION_COUNT -1;
     }
 
-    if (yellowPressed()) {
+    drawReactionLeaderboard();
+  }
+
+  if (yellowPressed()) {
       reactionLeaderboardOpen = false;
       drawReactionMenu();
     }
+
     return;
   }
 
@@ -2962,15 +3125,17 @@ void updateReactionMenu() {
   // Navigate through Reaction difficulties
   if (strumUpPressed()) {
     reactionIndex++;
-    if (reactionIndex >= REACTION_COUNT)
+    if (reactionIndex >= REACTION_COUNT) {
       reactionIndex = 0;
-      playTone(FX_BUZZER, MENU_SCALE_3[reactionIndex], 32);
+    }
+    playTone(FX_BUZZER,MENU_SCALE_3[reactionIndex], 32);
     drawReactionMenu();
   }
   if (strumDownPressed()) {
     reactionIndex--;
-    if (reactionIndex < 0)
-      reactionIndex = REACTION_COUNT - 1;    
+    if (reactionIndex < 0) {
+      reactionIndex = REACTION_COUNT - 1;
+    }
       playTone(FX_BUZZER, MENU_SCALE_3[reactionIndex], 32);
     drawReactionMenu();
   }
@@ -2994,16 +3159,19 @@ void updateSoloMenu() {
   // Navigate through Solo difficulties
   if (strumUpPressed()) {
     soloIndex++;
-    if (soloIndex >= SOLO_COUNT)
+    if (soloIndex >= SOLO_COUNT) {
       soloIndex = 0;
-      playTone(FX_BUZZER, MENU_SCALE_3[soloIndex], 32);
+    }
+
+    playTone(FX_BUZZER, MENU_SCALE_3[soloIndex], 32);
     drawSoloMenu();
   }
 
   if (strumDownPressed()) {
     soloIndex--;
-    if (soloIndex < 0)
+    if (soloIndex < 0) {
       soloIndex = SOLO_COUNT - 1;
+    }
       playTone(FX_BUZZER, MENU_SCALE_3[soloIndex], 32);
     drawSoloMenu();
   }
@@ -3069,43 +3237,52 @@ void runSpeedtestGame() {
 
         if (nextInput < FRET_COUNT) {
 
-          // Light the target fret
-          digitalWrite(
-            LED_PINS[nextInput],
-            HIGH
+          // Light the target fret in its assigned color
+          rgbLeds.setPixelColor(
+            nextInput,
+            FRET_RGB_COLORS[nextInput]
           );
 
-        delay(100);
+          rgbLeds.show();
 
-        digitalWrite(
-          LED_PINS[nextInput],
-          LOW
-        );
+          delay(100);
+
+          rgbLeds.setPixelColor(
+            nextInput,
+            LED_COLOR_OFF
+          );
+
+          rgbLeds.show();
 
         } else {
 
           // Input 5 represents either strum direction
-          digitalWrite(
-            LED_STRUM_PINS[0],
-            HIGH
+          rgbLeds.setPixelColor(
+            RGB_STRUM_UP,
+            LED_COLOR_TURQUOISE
           );
 
-          digitalWrite(
-            LED_STRUM_PINS[1],
-            HIGH
+          rgbLeds.setPixelColor(
+            RGB_STRUM_DOWN,
+            LED_COLOR_TURQUOISE
           );
+
+          rgbLeds.show();
 
           delay(100);
 
-          digitalWrite(
-          LED_STRUM_PINS[0],
-            LOW
+          // Input 5 represents either strum direction
+          rgbLeds.setPixelColor(
+            RGB_STRUM_UP,
+            LED_COLOR_OFF
           );
 
-          digitalWrite(
-            LED_STRUM_PINS[1],
-            LOW
+          rgbLeds.setPixelColor(
+            RGB_STRUM_DOWN,
+            LED_COLOR_OFF
           );
+
+          rgbLeds.show();
         }
       }
 
@@ -3121,12 +3298,13 @@ void runSpeedtestGame() {
         if (queueSize > 0 &&
             targetQueue[0] == i) {
 
-              for (int j = 0; j < queueSize - 1; j++)
+              for (int j = 0; j < queueSize - 1; j++) {
                 targetQueue[j] = targetQueue[j + 1];
+              }
 
-                queueSize--;
-                score++;
-                drawPlayingScreen(score);
+              queueSize--;
+              score++;
+              drawPlayingScreen(score);
             }
             else {
 
@@ -3143,23 +3321,24 @@ void runSpeedtestGame() {
           if (digitalRead(STRUM_UP_PIN) == LOW ||
               digitalRead(STRUM_DOWN_PIN) == LOW) {
 
-              if (queueSize > 0 &&
-                  targetQueue[0] == STRUM_INPUT_INDEX) {
+            if (queueSize > 0 &&
+              targetQueue[0] == STRUM_INPUT_INDEX) {
 
-                  for (int j = 0; j < queueSize - 1; j++)
-                      targetQueue[j] = targetQueue[j + 1];
-
-                  queueSize--;
-                  score++;
-                  drawPlayingScreen(score);
-              }
-              else {
-
-                  gameActive = false;
+              for (int j = 0; j < queueSize - 1; j++) {
+                targetQueue[j] = targetQueue[j + 1];
               }
 
-              while (digitalRead(STRUM_UP_PIN) == LOW ||
-                   digitalRead(STRUM_DOWN_PIN) == LOW);
+              queueSize--;
+              score++;
+              drawPlayingScreen(score);
+            }
+            else {
+
+                gameActive = false;
+            }
+
+            while (digitalRead(STRUM_UP_PIN) == LOW ||
+                digitalRead(STRUM_DOWN_PIN) == LOW);
           }
         }
 
@@ -3267,26 +3446,62 @@ void runSimonsaysGame() {
     for (int i = 0; i < sequenceLength; i++) {
 
       int input = sequence[i];
+
       if (useLight) {
 
         if (input < FRET_COUNT) {
-        
-        digitalWrite(LED_PINS[input], HIGH);
-        delay(250);
-        digitalWrite(LED_PINS[input], LOW);
-        } else {
-          for (int j = 0; j < FRET_COUNT; j++)
-               digitalWrite(LED_PINS[j], HIGH);
+
+          //Inputs 0-4 represent the five frets
+          rgbLeds.setPixelColor(
+            input,
+            FRET_RGB_COLORS[input]
+          );
+
+          rgbLeds.show();
 
           delay(250);
 
-          for (int j = 0; j < FRET_COUNT; j++)
-               digitalWrite(LED_PINS[j], LOW);
+          rgbLeds.setPixelColor(
+            input,
+            LED_COLOR_OFF
+          );
+
+          rgbLeds.show();
+
+        } else {
+
+          //Input 5 represents either strum direction
+          rgbLeds.setPixelColor(
+            RGB_STRUM_UP,
+            LED_COLOR_TURQUOISE
+          );
+
+          rgbLeds.setPixelColor(
+            RGB_STRUM_DOWN,
+            LED_COLOR_PINK
+          );
+
+          rgbLeds.show();
+
+          delay(250);
+
+          rgbLeds.setPixelColor(
+            RGB_STRUM_UP,
+            LED_COLOR_OFF
+          );
+
+          rgbLeds.setPixelColor(
+            RGB_STRUM_DOWN,
+            LED_COLOR_OFF
+          );
+
+          rgbLeds.show();
         }
       }
+
       if (useSound) {
 
-        if (input < 5)
+        if (input < FRET_COUNT)
           playTone(NOTE_BUZZER,
                      250 + (input * 100),
                      250);
@@ -3330,9 +3545,22 @@ void runSimonsaysGame() {
             }
             
             if (useLight) {
-                digitalWrite(LED_PINS[pressed], HIGH);
-                delay(100);
-                digitalWrite(LED_PINS[pressed], LOW);
+
+              rgbLeds.setPixelColor(
+                pressed,
+                FRET_RGB_COLORS[pressed]
+              );
+
+              rgbLeds.show();
+
+              delay(100);
+
+              rgbLeds.setPixelColor(
+                pressed,
+                LED_COLOR_OFF
+              );
+
+              rgbLeds.show();
             }
 
             while (digitalRead(BUTTON_PINS[b]) == LOW);
@@ -3340,7 +3568,10 @@ void runSimonsaysGame() {
         }
 
         // strum in F6 mode
-        if (numInputs == 6 && pressed == -1) {
+        if (
+          numInputs == FRET_AND_STRUM_INPUT_COUNT &&
+          pressed == -1
+        ) {
 
           if (digitalRead(STRUM_UP_PIN) == LOW ||
               digitalRead(STRUM_DOWN_PIN) == LOW) {
@@ -3354,11 +3585,32 @@ void runSimonsaysGame() {
             // Light up strum LEDs
             if (useLight) {
 
-              digitalWrite(LED_STRUM_PINS[0], HIGH);
-              digitalWrite(LED_STRUM_PINS[1], HIGH);
+              rgbLeds.setPixelColor(
+                RGB_STRUM_UP,
+                LED_COLOR_TURQUOISE
+              );
+              
+              rgbLeds.setPixelColor(
+                RGB_STRUM_DOWN,
+                LED_COLOR_TURQUOISE
+              );
+
+              rgbLeds.show();
+
               delay(100);
-              digitalWrite(LED_STRUM_PINS[0], LOW);
-              digitalWrite(LED_STRUM_PINS[1], LOW);
+
+              rgbLeds.setPixelColor(
+                RGB_STRUM_UP,
+                LED_COLOR_OFF
+              );
+              
+              rgbLeds.setPixelColor(
+                RGB_STRUM_DOWN,
+                LED_COLOR_OFF
+              );
+
+              rgbLeds.show();
+              
             }
 
             while (digitalRead(STRUM_UP_PIN) == LOW ||
@@ -3803,20 +4055,21 @@ void runSoloGame() {
           note = SOLO_BLUES[soloRoot][fret];
         }
 
-        // Light the matching fret LED
-        digitalWrite(
-          LED_PINS[fret],
-          HIGH
+        // Light the matching RGB fret LED
+        rgbLeds.setPixelColor(
+          fret,
+          FRET_RGB_COLORS[fret]
         );
+
+        rgbLeds.show();
 
         playTone(
           NOTE_BUZZER,
           note,
           200
         );
-
         spawnNote(fret);
-        
+
         // Keep the LED on while the fret is held
         while (
           digitalRead(BUTTON_PINS[fret]) == LOW
@@ -3824,11 +4077,13 @@ void runSoloGame() {
           delay(1);
         }
 
-        // Turn it off when released
-        digitalWrite(
-          LED_PINS[fret],
-          LOW
+        // Turn the RGB fret LED off when released
+        rgbLeds.setPixelColor(
+          fret,
+          LED_COLOR_OFF
         );
+
+        rgbLeds.show();
       }
     }
 
@@ -3836,17 +4091,40 @@ void runSoloGame() {
 
       lastActivity = millis();
 
+      rgbLeds.setPixelColor(
+        RGB_STRUM_UP,
+        LED_COLOR_TURQUOISE
+      );
+
+      rgbLeds.show();
+
       soloRoot++;
 
       if (soloRoot > 5)
         soloRoot = 0;
 
       drawSoloRoot();
+
+      delay(80);
+
+      rgbLeds.setPixelColor(
+        RGB_STRUM_UP,
+        LED_COLOR_OFF
+      );
+
+      rgbLeds.show();
     }
 
     if (strumDownPressed()) {
 
       lastActivity = millis();
+
+      rgbLeds.setPixelColor(
+        RGB_STRUM_DOWN,
+        LED_COLOR_PINK
+      );
+
+      rgbLeds.show();
 
       soloRoot--;
 
@@ -3854,6 +4132,15 @@ void runSoloGame() {
         soloRoot = 5;
         
       drawSoloRoot();
+
+      delay(80);
+
+      rgbLeds.setPixelColor(
+        RGB_STRUM_DOWN,
+        LED_COLOR_OFF
+      );
+
+      rgbLeds.show();
     }
 
     // Exit Solo by 5s inactivity
@@ -3861,8 +4148,8 @@ void runSoloGame() {
 
       playBackSound();
 
+      turnOffAllInputLights();
       currentState = STATE_SOLO_MENU;
-      Serial.println("SOLO EXIT");
       return;
 
     // Exit Solo by red+orange+strumup
@@ -3872,7 +4159,8 @@ void runSoloGame() {
       digitalRead(STRUM_UP_PIN) == LOW
     ) {
       playBackSound();
-      Serial.println("SOLO EXIT");
+      
+      turnOffAllInputLights();
       currentState = STATE_SOLO_MENU;
       return;
     }
@@ -3903,16 +4191,10 @@ void setup() {
   pinMode(STRUM_DOWN_PIN, INPUT_PULLUP);
 
   // Fret LEDs
-  for (int i = 0; i < FRET_COUNT; i++) {
-    pinMode(LED_PINS[i], OUTPUT);
-    digitalWrite(LED_PINS[i], LOW);
-  }
-
-  // Strum LEDs
-  for (int i = 0; i < STRUM_LED_COUNT; i++) {
-    pinMode(LED_STRUM_PINS[i], OUTPUT);
-    digitalWrite(LED_STRUM_PINS[i], LOW);
-  }
+  rgbLeds.begin();
+  rgbLeds.setBrightness(RGB_BRIGHTNESS);
+  rgbLeds.clear();
+  rgbLeds.show();
 
   // Buzzers
   pinMode(NOTE_BUZZER, OUTPUT);
