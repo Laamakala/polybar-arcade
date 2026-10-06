@@ -65,6 +65,16 @@ constexpr uint8_t BUTTON_PINS[FRET_COUNT] = {
 constexpr uint8_t STRUM_UP_PIN = 27;
 constexpr uint8_t STRUM_DOWN_PIN = 28;
 
+pinMode(
+  START_BUTTON_PIN,
+  INPUT_PULLUP
+);
+
+pinMode(
+  SELECT_BUTTON_PIN,
+  INPUT_PULLUP
+);
+
 constexpr uint8_t RGB_NEOPIXEL_PIN = 11; // for simulation
 // constexpr uint8_t RGB_DATA_PIN = 11;  // for physical build
 // constexpr uint8_t RGB_CLOCK_PIN = 12; // for physical build
@@ -75,16 +85,45 @@ constexpr uint8_t FX_BUZZER = 26;
 constexpr uint8_t RGB_BRIGHTNESS = 100;
 
 constexpr int FRET_RGB_START = 0;
-constexpr int RGB_GREEN_FRET = 0;
-constexpr int RGB_RED_FRET = 1;
-constexpr int RGB_YELLOW_FRET = 2;
-constexpr int RGB_BLUE_FRET = 3;
-constexpr int RGB_ORANGE_FRET = 4;
 
-constexpr int RGB_STRUM_UP = 5;
-constexpr int RGB_STRUM_DOWN = 6;
+  // ----- RGB LED INDEXES ----- //
 
-constexpr int RGB_LED_COUNT = 7;
+constexpr int RGB_FRET1_A = 0;
+constexpr int RGB_FRET1_B = 1;
+
+constexpr int RGB_FRET2_A = 2;
+constexpr int RGB_FRET2_B = 3;
+
+constexpr int RGB_FRET3_A = 4;
+constexpr int RGB_FRET3_B = 5;
+
+constexpr int RGB_FRET4_A = 6;
+constexpr int RGB_FRET5_B = 7;
+
+constexpr int RGB_FRET5_A = 8;
+constexpr int RGB_FRET5_B = 9;
+
+constexpr int RGB_STRUM_UP = 10;
+constexpr int RGB_STRUM_DOWN = 11;
+
+constexpr int RGB_START = 12;
+constexpr int RGB_SELECT = 13;
+
+// constexpr uint8_t START_BUTTON_PIN =
+  /* actual Polybar pin */; // EDIT lisää tähän start button pin
+
+// constexpr uint8_t SELECT_BUTTON_PIN =
+  /* actual Polybar pin */; // EDIT lisää tähän select button pin
+
+constexpr int RGB_LED_COUNT = 14;
+
+constexpr int FRET_RGB_PIXELS[FRET_COUNT][2] = {
+  { RGB_FRET1_A, RGB_FRET1_B },
+  { RGB_FRET2_A, RGB_FRET2_B },
+  { RGB_FRET3_A, RGB_FRET3_B },
+  { RGB_FRET4_A, RGB_FRET4_B },
+  { RGB_FRET5_A, RGB_FRET5_B }
+};
 
 // ----- 4. HARDWARE OBJECTS ----- //
 
@@ -157,13 +196,13 @@ const uint16_t COLOR_FRET5    = ILI9341_ORANGE; // Fret5: orange
 
   // RGB LED COLORS //
 const uint32_t LED_COLOR_GREEN =
-  rgbLeds.Color(0, 255, 80);
+  rgbLeds.Color(0, 255, 100);
 
 const uint32_t LED_COLOR_RED =
-  rgbLeds.Color(255, 30, 50);
+  rgbLeds.Color(255, 40, 70);
 
 const uint32_t LED_COLOR_YELLOW =
-  rgbLeds.Color(255, 190, 40);
+  rgbLeds.Color(255, 220, 80);
 
 const uint32_t LED_COLOR_BLUE =
   rgbLeds.Color(40, 100, 255);
@@ -189,6 +228,30 @@ const uint32_t FRET_RGB_COLORS[FRET_COUNT] = {
   rgbLeds.Color(255, 220, 80),  // Yellow fret
   rgbLeds.Color(40, 100, 255),  // Blue fret
   rgbLeds.Color(255, 90, 20)    // Orange fret
+};
+
+const uint8_t FRET_RGB_RED[FRET_COUNT] = {
+  0,
+  255,
+  255,
+  40,
+  255
+};
+
+const uint8_t FRET_RGB_GREEN[FRET_COUNT] = {
+  255,
+  40,
+  220,
+  100,
+  90
+};
+
+const uint8_t FRET_RGB_BLUE[FRET_COUNT] = {
+  100,
+  70,
+  80,
+  255,
+  20
 };
 
 // ----- 6. MUSIC NOTE FREQUENCIES ----- //
@@ -566,6 +629,31 @@ void turnOffAllInputLights();
 void playStartupFretSequence();
 void waitForGreenPress();
 
+void setFretRgb(
+  int fret,
+  uint8_t red,
+  uint8_t green,
+  uint8_t blue
+);
+
+void setFretColor(
+  int fret,
+  uint32_t color
+);
+
+void clearRgbLeds();
+
+void animateGreenSelect();
+void animateRedBack();
+void animateYellowHighscores();
+
+void animateGameStart(
+  int activeFrets
+);
+
+void animateGameOver();
+void animateNewHighscore();
+
   // D. SOUND //
 void playTone(int buzzerPin, unsigned int frequency, unsigned long duration);
 void playSelectSound();
@@ -769,24 +857,37 @@ bool strumDownPressed() {
   // C. HARDWARE & LED FUNCTIONS //
 
 void turnOffAllInputLights() {
-  rgbLeds.clear();
-  rgbLeds.show();
+  clearRgbLeds();
 }
 
 void updateMenuLEDs() {
 
-  for (int i = 0; i < FRET_COUNT; i++) {
+  rgbLeds.setPixelColor(
+    RGB_START,
+    digitalRead(START_BUTTON_PIN) == LOW
+      ? LED_COLOR_TURQUOISE
+      : LED_COLOR_OFF
+  );
+
+  rgbLeds.setPixelColor(
+    RGB_SELECT,
+    digitalRead(SELECT_BUTTON_PIN) == LOW
+      ? LED_COLOR_LAVENDER
+      : LED_COLOR_OFF
+  );
+
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
 
     if (
-      digitalRead(BUTTON_PINS[i]) == LOW
+      digitalRead(BUTTON_PINS[fret]) == LOW
     ) {
-      rgbLeds.setPixelColor(
-        i,
-        FRET_RGB_COLORS[i]
+      setFretlColor(
+        fret,
+        FRET_RGB_COLORS[fret]
       );
     } else {
-      rgbLeds.setPixelColor(
-        i,
+      setFretColor(
+        fret,
         LED_COLOR_OFF
       );
     }
@@ -1010,6 +1111,271 @@ rgbLeds.show();
     digitalRead(BUTTON_PINS[1]) == LOW) {
   delay(1);
   }
+}
+
+void setFretRgb(
+  int fret,
+  uint8_t red,
+  uint8_t green,
+  uint8_t blue
+) {
+  if (
+    fret < 0 ||
+    fret >= FRET_COUNT
+  ) {
+    return;
+  }
+
+  uint32_t color =
+    rgbLeds.Color(red, green, blue);
+
+  rgbLeds.setPixelColor(
+    FRET_RGB_PIXELS[fret][0],
+    color
+  );
+
+  rgbLeds.setPixelColor(
+    FRET_RGB_PIXELS[fret][1],
+    color
+  );
+}
+
+void setFretColor(
+  int fret,
+  uint32_t color
+) {
+  if (
+    fret < 0 ||
+    fret >= FRET_COUNT
+  ) {
+    return;
+  }
+
+  rgbLeds.setPixelColor(
+    FRET_RGB_PIXELS[fret][0],
+    color
+  );
+
+  rgbLeds.setPixelColor(
+    FRET_RGB_PIXELS[fret][1],
+    color
+  );
+}
+
+void clearRgbLeds() {
+  rgbLeds.clear();
+  rgbLeds.show();
+}
+
+void animateGreenSelect() {
+
+  clearRgbLeds();
+
+  const uint32_t green =
+    rgbLeds.Color(30, 255, 100);
+
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+
+    setFretColor(
+      fret,
+      green
+    );
+
+    rgbLeds.show();
+    delay(45);
+  }
+
+  delay(60);
+
+  clearRgbLeds();
+}
+
+void animateRedBack() {
+
+  clearRgbLeds();
+
+  const uint32_t red =
+    rgbLeds.Color(255, 25, 45);
+
+  // Begin at Fret 2
+  setFretColor(1, red);
+  rgbLeds.show();
+  delay(45);
+
+  // Expand left and right
+  setFretColor(0, red);
+  setFretColor(2, red);
+  rgbLeds.show();
+  delay(45);
+
+  // Continue toward the right edge
+  setFretColor(3, red);
+  rgbLeds.show();
+  delay(45);
+
+  setFretColor(4, red);
+  rgbLeds.show();
+  delay(60);
+
+  clearRgbLeds();
+}
+
+void animateYellowHighscores() {
+
+  clearRgbLeds();
+
+  const uint32_t yellow =
+    rgbLeds.Color(255, 210, 45);
+
+  setFretColor(0, yellow);
+  setFretColor(4, yellow);
+
+  rgbLeds.show();
+  delay(55);
+
+  setFretColor(1, yellow);
+  setFretColor(3, yellow);
+
+  rgbLeds.show();
+  delay(55);
+
+  setFretColor(2, yellow);
+
+  rgbLeds.show();
+  delay(80);
+
+  clearRgbLeds();
+}
+
+void animateGameStart(
+  int activeFrets
+) {
+  activeFrets = constrain(
+    activeFrets,
+    1,
+    FRET_COUNT
+  );
+
+  clearRgbLeds();
+
+  // Light active frets in sequence
+  for (int fret = 0; fret < activeFrets; fret++) {
+
+    setFretRgb(
+      fret,
+      FRET_RGB_RED[fret],
+      FRET_RGB_GREEN[fret],
+      FRET_RGB_BLUE[fret]
+    );
+
+    rgbLeds.show();
+    delay(45);
+  }
+
+  delay(80);
+
+  // Fade all active frets together
+  for (int level = 10; level >= 0; level--) {
+
+    for (int fret = 0; fret < activeFrets; fret++) {
+
+      setFretRgb(
+        fret,
+        FRET_RGB_RED[fret] * level / 10,
+        FRET_RGB_GREEN[fret] * level / 10,
+        FRET_RGB_BLUE[fret] * level / 10
+      );
+    }
+
+    rgbLeds.show();
+    delay(25);
+  }
+
+  clearRgbLeds();
+}
+
+void animateGameOver() {
+
+  clearRgbLeds();
+
+  for (int level = 10; level >= 0; level--) {
+
+    uint8_t red =
+      255 * level / 10;
+
+    uint8_t green =
+      20 * level / 10;
+
+    uint8_t blue =
+      35 * level / 10;
+
+    for (int fret = 0; fret < FRET_COUNT; fret++) {
+      setFretRgb(
+        fret,
+        red,
+        green,
+        blue
+      );
+    }
+
+    rgbLeds.show();
+    delay(35);
+  }
+
+  clearRgbLeds();
+}
+
+void animateNewHighscore() {
+
+  clearRgbLeds();
+
+  // Each fret gets its normal color
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+
+    setFretColor(
+      fret,
+      FRET_RGB_COLORS[fret]
+    );
+  }
+
+  rgbLeds.show();
+  delay(180);
+
+  // Change all frets to gold
+  const uint8_t goldRed = 255;
+  const uint8_t goldGreen = 165;
+  const uint8_t goldBlue = 20;
+
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+    setFretRgb(
+      fret,
+      goldRed,
+      goldGreen,
+      goldBlue
+    );
+  }
+
+  rgbLeds.show();
+  delay(180);
+
+  // Fade gold together
+  for (int level = 10; level >= 0; level--) {
+
+    for (int fret = 0; fret < FRET_COUNT; fret++) {
+
+      setFretRgb(
+        fret,
+        goldRed * level / 10,
+        goldGreen * level / 10,
+        goldBlue * level / 10
+      );
+    }
+
+    rgbLeds.show();
+    delay(35);
+  }
+
+  clearRgbLeds();
 }
 
   // D. SOUND FUNCTIONS //
@@ -2840,6 +3206,8 @@ void updateMainMenu() {
 
   if (greenPressed()) {
     playSelectSound();
+    animateGreenSelect();
+    
     switch (mainMenuIndex) {
       case 0:
         currentState = STATE_SPEEDTEST_MENU;
@@ -2881,6 +3249,7 @@ void updateSpeedtestMenu() {
     
     // Yellow returns to difficulty menu
     if (yellowPressed()) {
+      animateRedBack();
       speedLeaderboardOpen = false;
       drawSpeedtestMenu();
     }    
@@ -2891,6 +3260,9 @@ void updateSpeedtestMenu() {
   if (greenPressed()) {
     playSelectSound();
     configureSpeedtestDifficulty();
+    animateGameStart(
+      min(numImputs, FRET_COUNT)
+    );
     useLight = true;
     useSound = true;
     currentGame = GAME_SPEEDTEST;
@@ -2900,11 +3272,15 @@ void updateSpeedtestMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    animateRedBackSound();
+    
     currentState = STATE_MAIN_MENU;
   }
 
   // Show speedtest leaderboard
   if (yellowPressed()) {
+    playSelectSound(); // tähän voi tehdä oman äänen EDIT
+    animateYellowHighscores();
     speedLeaderboardOpen = true;
     drawSpeedLeaderboard();
     return;
@@ -2977,6 +3353,7 @@ void updateSimonMenu() {
     }
 
     if (yellowPressed()) {
+      animateRedBack();
       simonLeaderboardOpen = false;
       drawSimonMenu();
     }
@@ -2987,6 +3364,9 @@ void updateSimonMenu() {
   if (greenPressed()) {
     playSelectSound();
     configureSimonsaysDifficulty();
+    animateGameStart(
+      min(numImputs, FRET_COUNT)
+    );
     useLight = true;
     useSound = true;
     currentGame = GAME_SIMON;
@@ -2996,11 +3376,15 @@ void updateSimonMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    animateRedBackSound();
     currentState = STATE_MAIN_MENU;
   }
 
   // Show SimonSays leaderboard
   if (yellowPressed()) {
+    playSelectSound(); // tähän voi tehdä oman äänen EDIT
+    animateYellowHighscores();
+    
     simonLeaderboardOpen = true;
     drawSimonLeaderboard();
     return;
@@ -3071,7 +3455,8 @@ void updateReactionMenu() {
     drawReactionLeaderboard();
   }
 
-  if (yellowPressed()) {
+    if (yellowPressed()) {
+      animateRedBack();
       reactionLeaderboardOpen = false;
       drawReactionMenu();
     }
@@ -3083,6 +3468,8 @@ void updateReactionMenu() {
   if (greenPressed()) {
     playSelectSound();
     configureReactionDifficulty();
+    animateGameStart(FRET_COUNT);
+    
     useLight = true;
     useSound = true;
     currentGame = GAME_REACTION;
@@ -3092,11 +3479,16 @@ void updateReactionMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    animateRedBackSound();
+    
     currentState = STATE_MAIN_MENU;
   }
 
   // Show Reaction leaderboard
   if (yellowPressed()) {
+    playSelectSound(); // tähän voi tehdä oman äänen EDIT
+    animateYellowHighscores();
+    
     reactionLeaderboardOpen = true;
     drawReactionLeaderboard();
     return;
@@ -3153,6 +3545,7 @@ void updateSoloMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    animateRedBackSound();
     currentState = STATE_MAIN_MENU;
   }
 
@@ -3401,10 +3794,12 @@ void runSpeedtestGame() {
 
   if (newHighScore && pendingInitials != nullptr) {
     playVictorySound();
+    animateNewHighscore();
     startInitialsEntry();
     return;
   }
-    
+
+  animateGameOver();
   playGameOverSound();
   currentState = STATE_GAMEOVER;
   return;
