@@ -51,9 +51,10 @@ constexpr unsigned long MENU_COOLDOWN = 50;
 // Animation speed constants
 constexpr int RGB_STEP_FAST_MS = 40;
 constexpr int RGB_STEP_NORMAL_MS = 70;
+constexpr int RGB_STEP_SLOW_MS = 140;
 constexpr int RGB_HOLD_SHORT_MS = 100;
-constexpr int RGB_FADE_STEP_MS = 25;
-constexpr int RGB_FADE_STEPS = 10;
+constexpr int RGB_FADE_STEP_MS = 50;
+constexpr int RGB_FADE_STEPS = 15;
 
 // ----- 3. PIN DEFINITIONS ----- //
 
@@ -695,6 +696,7 @@ void initializeInputs();
 void updateInputs();
 
 void consumeAllPressEvents();
+void waitForAllGameInputsReleased();
 
   // C. LEDs and HARDWARE //
 void updateMenuLEDs();
@@ -748,6 +750,7 @@ void setUtilityColors(
 
 void clearRgbLeds();
 
+void animateSplashExit();
 void animateGreenSelect();
 void animateRedBack();
 void animateYellowHighscores();
@@ -761,6 +764,7 @@ void animateNewHighscore();
 
   // D. SOUND //
 void playTone(int buzzerPin, unsigned int frequency, unsigned long duration);
+void playGameTone(int buzzerPin, unsigned int frequency, unsigned long duration);
 void playSelectSound();
 void playBackSound();
 void playNavUpSound();
@@ -1246,7 +1250,45 @@ void consumeAllPressEvents() {
   input.joystickPressed = false;
 }
 
-  // C. HARDWARE & LED FUNCTIONS //
+void waitForAllGameInputsReleased() {
+
+  unsigned long waitStart = millis();
+
+  while (true) {
+
+    updateInputs();
+
+    bool anyHeld =
+      input.strumUpHeld ||
+      input.strumDownHeld;
+
+    for (int fret = 0; fret < FRET_COUNT; fret++) {
+      anyHeld |= input.fretHeld[fret];
+    }
+
+    if (!anyHeld) {
+      break;
+    }
+
+    // Safety timeout prevents an infinite wait
+    if (
+      millis() - waitStart >= 2000
+    ) {
+      Serial.println(
+        "Input release timeout"
+      );
+
+      break;
+    }
+
+    delay(1);
+  }
+
+  // Discard release-phase edge events
+  consumeAllPressEvents();
+}
+
+// C. HARDWARE & LED FUNCTIONS //
 
 void updateMenuLEDs() {
 
@@ -1301,17 +1343,27 @@ void updateMenuLEDs() {
 
 void waitForGreenPress() {
 
-    // release
-    while (digitalRead(BUTTON_PINS[0]) == LOW)
-        delay(1);
+  // Discard the press that led to this screen.
+  waitForAllGameInputsReleased();
+  consumeAllPressEvents();
 
-    // press
-    while (digitalRead(BUTTON_PINS[0]) == HIGH)
-        delay(1);
+  // Wait for a fresh Green press.
+  while (true) {
 
-    // release again
-    while (digitalRead(BUTTON_PINS[0]) == LOW)
-        delay(1);
+    updateInputs();
+
+    if (input.fretPressed[0]) {
+      input.fretPressed[0] = false;
+      break;
+    }
+
+    delay(1);
+  }
+
+  // Do not allow the same Green press to carry
+  // into the next Reaction round.
+  waitForAllGameInputsReleased();
+  consumeAllPressEvents();
 }
 
 void playStartupFretSequence() {
@@ -1617,6 +1669,89 @@ void flashAllFrets(
   rgbLeds.show();
 }
 
+void animateSplashExit() {
+
+  clearRgbLeds();
+
+  const uint32_t splashColors[] = {
+    LED_COLOR_GREEN,
+    LED_COLOR_RED,
+    LED_COLOR_YELLOW,
+    LED_COLOR_BLUE,
+    LED_COLOR_ORANGE,
+    LED_COLOR_TURQUOISE,
+    LED_COLOR_PINK,
+    LED_COLOR_LAVENDER
+  };
+
+  constexpr int splashColorCount =
+    sizeof(splashColors) /
+    sizeof(splashColors[0]);
+
+  // Light all 14 pixels individually
+  for (
+    int pixel = 0;
+    pixel < RGB_LED_COUNT;
+    pixel++
+  ) {
+    uint32_t color =
+      splashColors[
+        pixel % splashColorCount
+      ];
+
+    rgbLeds.setPixelColor(
+      pixel,
+      color
+    );
+
+    rgbLeds.show();
+    delay(RGB_STEP_FAST_MS);
+  }
+
+  delay(RGB_HOLD_SHORT_MS);
+
+  // Fade each pixel from its assigned color
+  for (
+    int step = RGB_FADE_STEPS;
+    step >= 0;
+    step--
+  ) {
+    for (
+      int pixel = 0;
+      pixel < RGB_LED_COUNT;
+      pixel++
+    ) {
+      uint32_t originalColor =
+        splashColors[
+          pixel % splashColorCount
+        ];
+
+      uint8_t red =
+        (originalColor >> 16) & 0xFF;
+
+      uint8_t green =
+        (originalColor >> 8) & 0xFF;
+
+      uint8_t blue =
+        originalColor & 0xFF;
+
+      rgbLeds.setPixelColor(
+        pixel,
+        rgbLeds.Color(
+          red * step / RGB_FADE_STEPS,
+          green * step / RGB_FADE_STEPS,
+          blue * step / RGB_FADE_STEPS
+        )
+      );
+    }
+
+    rgbLeds.show();
+    delay(RGB_FADE_STEP_MS);
+  }
+
+  clearRgbLeds();
+}
+
 void animateGreenSelect() {
 
   clearRgbLeds();
@@ -1716,7 +1851,7 @@ void animateGameStart(
     );
 
     rgbLeds.show();
-    delay(RGB_STEP_NORMAL_MS);
+    delay(RGB_STEP_SLOW_MS);
   }
 
   delay(RGB_HOLD_SHORT_MS);
@@ -1815,6 +1950,25 @@ void playTone(
   unsigned long duration
 ) {
   if (!soundEnabled) {
+    return;
+  }
+
+  tone(
+    buzzerPin,
+    frequency,
+    duration
+  );
+}
+
+void playGameTone(
+  int buzzerPin,
+  unsigned int frequency,
+  unsigned long duration
+) {
+  if (
+    !soundEnabled ||
+    !useSound
+  ) {
     return;
   }
 
@@ -3303,10 +3457,10 @@ void startReactionCue(int targetFret) {
     if (reactionIndex == 0) {
 
       // Simple mode accepts any fret
-      for (int i = 0; i < FRET_COUNT; i++) {
+      for (int fret = 0; fret < FRET_COUNT; fret++) {
         setFretColor(
-          i,
-          FRET_RGB_COLORS[i]
+          fret,
+          FRET_RGB_COLORS[fret]
         );
       }
 
@@ -3314,7 +3468,7 @@ void startReactionCue(int targetFret) {
 
     } else {
 
-      // Chaos mode requires the target fret
+      // Chaos mode requires the target specific fret
       setFretColor(
         targetFret,
         FRET_RGB_COLORS[targetFret]
@@ -3343,55 +3497,6 @@ void startReactionCue(int targetFret) {
     }
   }
 }
-
-/*
-// Reaction game: result screen after 5 rounds
-void drawReactionResultScreen(int average, int best, int worst) {
-
-    tft.fillScreen(COLOR_BG);
-
-    tft.setTextColor(COLOR_REACTION);
-    tft.setTextSize(2);
-
-    tft.setCursor(10, 2);
-    tft.print("RESULT");
-
-    tft.setTextColor(COLOR_TEXT);
-    tft.setTextSize(2);
-
-    tft.setCursor(10, 25);
-    tft.print("AVG:");
-    tft.print(average);
-
-    tft.setCursor(10, 45);
-    tft.print("BEST:");
-    tft.print(best);
-
-    tft.setCursor(10, 65);
-    tft.print("WORST:");
-    tft.print(worst);
-}
-*/
-
-/* 
-// Reaction game: Draw screen for when the player presses a button too early
-void drawTooEarlyScreen() {
-
-    tft.fillScreen(COLOR_ERROR);
-
-    tft.setTextColor(COLOR_TEXT);
-    tft.setTextSize(2);
-
-    tft.setCursor(10, 10);
-    tft.print("NOT YET");
-
-    tft.setCursor(10, 40);
-    tft.print("PRESS");
-
-    tft.setTextColor(COLOR_NORMAL_HS);
-    tft.print(" G");
-}
-    */
 
   // M. SOLO-JAM ANIMATION HELPERS //
 
@@ -3723,23 +3828,21 @@ void updateSpeedtestMenu() {
     drawSpeedLeaderboard();
     return;
   }
-
-  // Start speedtest game with light only
-  if (bluePressed()) {
-    playSelectSound();
-    configureSpeedtestDifficulty();
-    useLight = true;
-    useSound = false;
-    currentGame = GAME_SPEEDTEST;
-    runSpeedtestGame();
-  }
   
   // Start speedtest game with sound only
   if (orangePressed()) {
+
     playSelectSound();
+
     configureSpeedtestDifficulty();
+
+    animateGameStart(
+      min(numInputs, FRET_COUNT)
+    );
+
     useLight = false;
     useSound = true;
+
     currentGame = GAME_SPEEDTEST;
     runSpeedtestGame();
   }
@@ -3829,22 +3932,19 @@ void updateSimonMenu() {
     return;
   }
 
-  // Start SimonSays game with light only
-  if (bluePressed()) {
-    playSelectSound();
-    configureSimonsaysDifficulty();
-    useLight = true;
-    useSound = false;
-    currentGame = GAME_SIMON;
-    runSimonsaysGame();
-  }
-
   // Start SimonSays game with sound only
   if (orangePressed()) {
     playSelectSound();
+
     configureSimonsaysDifficulty();
+
+    animateGameStart(
+      min(numInputs, FRET_COUNT)
+    );
+
     useLight = false;
     useSound = true;
+
     currentGame = GAME_SIMON;
     runSimonsaysGame();
   }
@@ -3936,20 +4036,15 @@ void updateReactionMenu() {
     return;
   }
 
-  // Start Reaction game with light only
-  if (bluePressed()) {
-    playSelectSound();
-    configureReactionDifficulty();
-    useLight = true;
-    useSound = false;
-    currentGame = GAME_REACTION;
-    runReactionGame();
-  }
-
   // Start Reaction game with sound only
   if (orangePressed()) {
     playSelectSound();
     configureReactionDifficulty();
+
+    animateGameStart(
+      min(numInputs, FRET_COUNT)
+    );
+    
     useLight = false;
     useSound = true;
     currentGame = GAME_REACTION;
@@ -4018,61 +4113,93 @@ void updateSoloMenu() {
 void runSpeedtestGame() {
 
   currentState = STATE_PLAYING;
+  currentGame = GAME_SPEEDTEST;
 
   drawPlayingScreen(0);
-  while (
-    digitalRead(BUTTON_PINS[0]) == LOW ||
-    digitalRead(BUTTON_PINS[1]) == LOW ||
-    digitalRead(BUTTON_PINS[2]) == LOW ||
-    digitalRead(BUTTON_PINS[3]) == LOW ||
-    digitalRead(BUTTON_PINS[4]) == LOW ||
-    digitalRead(STRUM_UP_PIN) == LOW ||
-    digitalRead(STRUM_DOWN_PIN) == LOW
-  ) {
-    delay(1);
-  }
+
+  // Wait until the menu-start button and other
+  // controls have been released.
+  waitForAllGameInputsReleased();
+
   clearRgbLeds();
 
   int score = 0;
+
   unsigned long currentDelay = 800;
-  unsigned long minDelay = 120;
-  unsigned long speedStep = 10;
+  const unsigned long minDelay = 120;
+  const unsigned long speedStep = 10;
+
   queueSize = 0;
+
   int lastInput = -1;
-  unsigned long lastStepTime = millis();
+
+  unsigned long lastStepTime =
+    millis();
+
   bool gameActive = true;
 
   while (gameActive) {
+
+    // Speedtest is blocking, so it must update
+    // the centralized input state internally.
+    updateInputs();
+
     unsigned long now = millis();
 
-    // Spawn next target
-    if (now - lastStepTime >= currentDelay) {
+    // ----- SPAWN NEXT TARGET ----- //
+
+    if (
+      now - lastStepTime >= currentDelay
+    ) {
       lastStepTime = now;
+
       int nextInput;
 
       do {
-            nextInput = random(0, numInputs);
+        nextInput =
+          random(0, numInputs);
       }
       while (nextInput == lastInput);
-        lastInput = nextInput;
 
-      if (queueSize < MAX_TARGET_QUEUE) {
-          targetQueue[queueSize++] = nextInput;
+      lastInput = nextInput;
+
+      if (
+        queueSize < MAX_TARGET_QUEUE
+      ) {
+        targetQueue[queueSize] =
+          nextInput;
+
+        queueSize++;
       }
+
+      // ----- TARGET SOUND ----- //
 
       if (useSound) {
-        if (nextInput < FRET_COUNT)
-          playTone(NOTE_BUZZER,
-                  250 + (nextInput * 100),
-                  50);
-          else
-            playTone(NOTE_BUZZER, 1000, 50);
+
+        if (nextInput < FRET_COUNT) {
+
+          playTone(
+            NOTE_BUZZER,
+            250 + nextInput * 100,
+            50
+          );
+
+        } else {
+
+          playTone(
+            NOTE_BUZZER,
+            1000,
+            50
+          );
+        }
       }
+
+      // ----- TARGET LIGHT ----- //
+
       if (useLight) {
 
         if (nextInput < FRET_COUNT) {
 
-          // Light the target fret in its assigned color
           setFretColor(
             nextInput,
             FRET_RGB_COLORS[nextInput]
@@ -4080,7 +4207,7 @@ void runSpeedtestGame() {
 
           rgbLeds.show();
 
-          delay(100);
+          delay(RGB_HOLD_SHORT_MS);
 
           setFretColor(
             nextInput,
@@ -4091,17 +4218,15 @@ void runSpeedtestGame() {
 
         } else {
 
-          // Input 5 represents either strum direction
           setStrumColors(
             LED_COLOR_TURQUOISE,
-            LED_COLOR_PINK            
+            LED_COLOR_TURQUOISE
           );
 
           rgbLeds.show();
 
-          delay(100);
+          delay(RGB_HOLD_SHORT_MS);
 
-          // Input 5 represents either strum direction
           setStrumColors(
             LED_COLOR_OFF,
             LED_COLOR_OFF
@@ -4111,64 +4236,134 @@ void runSpeedtestGame() {
         }
       }
 
-    if (currentDelay > minDelay)
-        currentDelay -= speedStep;
+      // Increase the game speed
+      if (currentDelay > minDelay) {
+
+        if (
+          currentDelay >
+          minDelay + speedStep
+        ) {
+          currentDelay -=
+            speedStep;
+
+        } else {
+          currentDelay =
+            minDelay;
+        }
+      }
     }
 
-    // Fret buttons
-    for (int i = 0; i < min(numInputs, FRET_COUNT); i++) {
+    // ----- FRET INPUTS ----- //
 
-      if (digitalRead(BUTTON_PINS[i]) == LOW) {
+    for (
+      int fret = 0;
+      fret < min(numInputs, FRET_COUNT);
+      fret++
+    ) {
+      if (!input.fretPressed[fret]) {
+        continue;
+      }
 
-        if (queueSize > 0 &&
-            targetQueue[0] == i) {
+      // Consume this press immediately
+      input.fretPressed[fret] = false;
 
-              for (int j = 0; j < queueSize - 1; j++) {
-                targetQueue[j] = targetQueue[j + 1];
-              }
+      bool correctInput =
+        queueSize > 0 &&
+        targetQueue[0] == fret;
 
-              queueSize--;
-              score++;
-              drawPlayingScreen(score);
-            }
-            else {
+      if (correctInput) {
 
-                gameActive = false;
-            }
-
-          while (digitalRead(BUTTON_PINS[i]) == LOW);
+        // Remove the first queued target
+        for (
+          int queueIndex = 0;
+          queueIndex < queueSize - 1;
+          queueIndex++
+        ) {
+          targetQueue[queueIndex] =
+            targetQueue[queueIndex + 1];
         }
+
+        queueSize--;
+        score++;
+
+        drawPlayingScreen(score);
+
+      } else {
+
+        gameActive = false;
+        break;
+      }
     }
 
-      // Strum input (5+1 difficulty)
-      if (numInputs == FRET_AND_STRUM_INPUT_COUNT) {
+    if (!gameActive) {
+      break;
+    }
 
-          if (digitalRead(STRUM_UP_PIN) == LOW ||
-              digitalRead(STRUM_DOWN_PIN) == LOW) {
+    // ----- STRUM INPUT ----- //
 
-            if (queueSize > 0 &&
-              targetQueue[0] == STRUM_INPUT_INDEX) {
+    if (
+      numInputs ==
+        FRET_AND_STRUM_INPUT_COUNT &&
+      (
+        input.strumUpPressed ||
+        input.strumDownPressed
+      )
+    ) {
+      // Consume both strum press events
+      input.strumUpPressed = false;
+      input.strumDownPressed = false;
 
-              for (int j = 0; j < queueSize - 1; j++) {
-                targetQueue[j] = targetQueue[j + 1];
-              }
+      bool correctInput =
+        queueSize > 0 &&
+        targetQueue[0] ==
+          STRUM_INPUT_INDEX;
 
-              queueSize--;
-              score++;
-              drawPlayingScreen(score);
-            }
-            else {
+      if (correctInput) {
 
-                gameActive = false;
-            }
-
-            while (digitalRead(STRUM_UP_PIN) == LOW ||
-                digitalRead(STRUM_DOWN_PIN) == LOW);
-          }
+        // Remove the first queued target
+        for (
+          int queueIndex = 0;
+          queueIndex < queueSize - 1;
+          queueIndex++
+        ) {
+          targetQueue[queueIndex] =
+            targetQueue[queueIndex + 1];
         }
 
-      delay(2);
+        queueSize--;
+        score++;
+
+        drawPlayingScreen(score);
+
+      } else {
+
+        gameActive = false;
+      }
+    }
+
+    // ----- OPTIONAL EMERGENCY EXIT ----- //
+
+    if (
+      input.startHeld &&
+      input.selectHeld
+    ) {
+      Serial.println(
+        "Speedtest aborted"
+      );
+
+      gameActive = false;
+    }
+
+    delay(2);
   }
+
+  // Prevent the final incorrect press from
+  // activating something on the next screen.
+  consumeAllPressEvents();
+
+  clearRgbLeds();
+
+  // ----- HIGHSCORE PROCESSING ----- //
 
   newHighScore = false;
   pendingInitials = nullptr;
@@ -4177,16 +4372,19 @@ void runSpeedtestGame() {
 
   if (useLight) {
 
-    // Normal mode
-    highScorePosition = insertTopScore(
-      speedHS.normal[speedtestIndex],
-      score
-    );
+    // Normal/light mode
+    highScorePosition =
+      insertTopScore(
+        speedHS.normal[speedtestIndex],
+        score
+      );
 
     if (highScorePosition >= 0) {
 
       prepareInitialsSlot(
-        speedNormalInitials[speedtestIndex],
+        speedNormalInitials[
+          speedtestIndex
+        ],
         highScorePosition
       );
 
@@ -4198,18 +4396,21 @@ void runSpeedtestGame() {
       newHighScore = true;
     }
 
-    } else {
+  } else {
 
     // No-light mode
-    highScorePosition = insertTopScore(
-      speedHS.noLight[speedtestIndex],
-      score
-    );
+    highScorePosition =
+      insertTopScore(
+        speedHS.noLight[speedtestIndex],
+        score
+      );
 
     if (highScorePosition >= 0) {
 
       prepareInitialsSlot(
-        speedNoLightInitials[speedtestIndex],
+        speedNoLightInitials[
+          speedtestIndex
+        ],
         highScorePosition
       );
 
@@ -4219,23 +4420,31 @@ void runSpeedtestGame() {
           [highScorePosition];
 
       newHighScore = true;
-      }
     }
+  }
 
   lastScore = score;
 
-  if (newHighScore && pendingInitials != nullptr) {
+  // ----- NEW HIGHSCORE ----- //
+
+  if (
+    newHighScore &&
+    pendingInitials != nullptr
+  ) {
     playVictorySound();
-    animateNewHighscore();
-    startInitialsEntry();
     animateYellowHighscores();
+    animateNewHighscore();
+
+    startInitialsEntry();
     return;
   }
 
+  // ----- NORMAL GAME OVER ----- //
+
   playGameOverSound();
   animateGameOver();
+
   currentState = STATE_GAMEOVER;
-  return;
 }
 
   // B. SIMON SAYS    //
@@ -4246,24 +4455,22 @@ void runSimonsaysGame() {
 
   drawPlayingScreen(0);
 
-  // Wait for all buttons released
-  while (
-    digitalRead(BUTTON_PINS[0]) == LOW ||
-    digitalRead(BUTTON_PINS[1]) == LOW ||
-    digitalRead(BUTTON_PINS[2]) == LOW ||
-    digitalRead(BUTTON_PINS[3]) == LOW ||
-    digitalRead(BUTTON_PINS[4]) == LOW ||
-    digitalRead(STRUM_UP_PIN) == LOW ||
-    digitalRead(STRUM_DOWN_PIN) == LOW
-  ) {
-    delay(1);
-  }
+  // Prevent the menu-starting button press from
+  // becoming Simon's first player input.
+  waitForAllGameInputsReleased();
+  consumeAllPressEvents();
 
-  int sequence[100];
+  clearRgbLeds();
+
+  constexpr int MAX_SIMON_SEQUENCE = 100;
+
+  int sequence[MAX_SIMON_SEQUENCE] = {};
+
   int sequenceLength = 1;
   int score = 0;
 
-  sequence[0] = random(0, numInputs);
+  sequence[0] =
+    random(0, numInputs);
 
   bool gameActive = true;
 
@@ -4271,43 +4478,68 @@ void runSimonsaysGame() {
 
     // ----- SHOW SEQUENCE ----- //
 
-    for (int i = 0; i < sequenceLength; i++) {
+    for (
+      int sequenceIndex = 0;
+      sequenceIndex < sequenceLength;
+      sequenceIndex++
+    ) {
+      int targetInput =
+        sequence[sequenceIndex];
 
-      int input = sequence[i];
+      // Fret target
+      if (targetInput < FRET_COUNT) {
 
-      if (useLight) {
-
-        if (input < FRET_COUNT) {
-
-          //Inputs 0-4 represent the five frets
+        if (useLight) {
           setFretColor(
-            input,
-            FRET_RGB_COLORS[input]
+            targetInput,
+            FRET_RGB_COLORS[targetInput]
           );
 
           rgbLeds.show();
+        }
 
-          delay(250);
+        if (useSound) {
+          playTone(
+            NOTE_BUZZER,
+            250 + targetInput * 100,
+            250
+          );
+        }
 
+        delay(250);
+
+        if (useLight) {
           setFretColor(
-            input,
+            targetInput,
             LED_COLOR_OFF
           );
 
           rgbLeds.show();
+        }
 
-        } else {
+      } else {
 
-          //Input 5 represents either strum direction
+        // Strum target
+        if (useLight) {
           setStrumColors(
             LED_COLOR_TURQUOISE,
             LED_COLOR_PINK
           );
 
           rgbLeds.show();
+        }
 
-          delay(250);
+        if (useSound) {
+          playTone(
+            NOTE_BUZZER,
+            1000,
+            250
+          );
+        }
 
+        delay(250);
+
+        if (useLight) {
           setStrumColors(
             LED_COLOR_OFF,
             LED_COLOR_OFF
@@ -4317,157 +4549,179 @@ void runSimonsaysGame() {
         }
       }
 
-      if (useSound) {
-
-        if (input < FRET_COUNT)
-          playTone(NOTE_BUZZER,
-                     250 + (input * 100),
-                     250);
-        else
-          playTone(NOTE_BUZZER, 1000, 250);
-      }
-
+      // Gap between displayed inputs
       delay(250);
     }
 
+    // Inputs made while Simon displayed the sequence
+    // must not count as player answers.
+    waitForAllGameInputsReleased();
+    consumeAllPressEvents();
+
     // ----- PLAYER REPEATS SEQUENCE ----- //
 
-    for (int i = 0; i < sequenceLength; i++) {
+    for (
+      int sequenceIndex = 0;
+      sequenceIndex < sequenceLength;
+      sequenceIndex++
+    ) {
+      int pressedInput = -1;
 
-      int pressed = -1;
+      unsigned long inputWaitStart =
+        millis();
 
-      unsigned long startTime = millis();
-         
-      while (pressed == -1) {
+      while (
+        pressedInput == -1 &&
+        gameActive
+      ) {
+        updateInputs();
 
-        // timeout
-        if (millis() - startTime > 2000) {
-
+        // Two-second timeout
+        if (
+          millis() - inputWaitStart >
+          2000
+        ) {
           gameActive = false;
           break;
         }
 
-        // fret buttons
-        for (int b = 0; b < min(numInputs, FRET_COUNT); b++) {
+        // ----- FRET INPUTS ----- //
 
-          if (digitalRead(BUTTON_PINS[b]) == LOW) {
-
-            pressed = b;
-
-            if (useSound) {
-              playTone(
-                NOTE_BUZZER,
-                250 + (pressed * 100),
-                100
-                );
-            }
-            
-            if (useLight) {
-
-              setFretColor(
-                pressed,
-                FRET_RGB_COLORS[pressed]
-              );
-
-              rgbLeds.show();
-
-              delay(100);
-
-              setFretColor(
-                pressed,
-                LED_COLOR_OFF
-              );
-
-              rgbLeds.show();
-            }
-
-            while (digitalRead(BUTTON_PINS[b]) == LOW);
+        for (
+          int fret = 0;
+          fret < min(numInputs, FRET_COUNT);
+          fret++
+        ) {
+          if (!input.fretPressed[fret]) {
+            continue;
           }
+
+          // Consume the event.
+          input.fretPressed[fret] = false;
+
+          pressedInput = fret;
+
+          if (useSound) {
+            playTone(
+              NOTE_BUZZER,
+              250 + fret * 100,
+              RGB_HOLD_SHORT_MS
+            );
+          }
+
+          if (useLight) {
+            setFretColor(
+              fret,
+              FRET_RGB_COLORS[fret]
+            );
+
+            rgbLeds.show();
+
+            delay(RGB_HOLD_SHORT_MS);
+
+            setFretColor(
+              fret,
+              LED_COLOR_OFF
+            );
+
+            rgbLeds.show();
+          }
+
+          break;
         }
 
-        // strum in F6 mode
+        // ----- STRUM INPUT ----- //
+
         if (
-          numInputs == FRET_AND_STRUM_INPUT_COUNT &&
-          pressed == -1
+          pressedInput == -1 &&
+          numInputs ==
+            FRET_AND_STRUM_INPUT_COUNT &&
+          (
+            input.strumUpPressed ||
+            input.strumDownPressed
+          )
         ) {
+          pressedInput =
+            STRUM_INPUT_INDEX;
 
-          if (digitalRead(STRUM_UP_PIN) == LOW ||
-              digitalRead(STRUM_DOWN_PIN) == LOW) {
+          // Consume both because either direction
+          // represents the same Simon input.
+          input.strumUpPressed = false;
+          input.strumDownPressed = false;
 
-            pressed = STRUM_INPUT_INDEX;
+          if (useSound) {
+            playTone(
+              NOTE_BUZZER,
+              1000,
+              RGB_HOLD_SHORT_MS
+            );
+          }
 
-            if(useSound) {
-              playTone(NOTE_BUZZER, 1000, 100);
-            }
+          if (useLight) {
+            setStrumColors(
+              LED_COLOR_TURQUOISE,
+              LED_COLOR_PINK
+            );
 
-            // Light up strum LEDs
-            if (useLight) {
+            rgbLeds.show();
 
-              rgbLeds.setPixelColor(
-                RGB_STRUM_UP,
-                LED_COLOR_TURQUOISE
-              );
-              
-              rgbLeds.setPixelColor(
-                RGB_STRUM_DOWN,
-                LED_COLOR_TURQUOISE
-              );
+            delay(RGB_HOLD_SHORT_MS);
 
-              rgbLeds.show();
+            setStrumColors(
+              LED_COLOR_OFF,
+              LED_COLOR_OFF
+            );
 
-              delay(100);
-
-              rgbLeds.setPixelColor(
-                RGB_STRUM_UP,
-                LED_COLOR_OFF
-              );
-              
-              rgbLeds.setPixelColor(
-                RGB_STRUM_DOWN,
-                LED_COLOR_OFF
-              );
-
-              rgbLeds.show();
-              
-            }
-
-            while (digitalRead(STRUM_UP_PIN) == LOW ||
-                   digitalRead(STRUM_DOWN_PIN) == LOW);
+            rgbLeds.show();
           }
         }
 
         delay(2);
       }
 
-      if (!gameActive)
+      if (!gameActive) {
         break;
+      }
 
-      // wrong note
-      if (pressed != sequence[i]) {
-
+      // Wrong input
+      if (
+        pressedInput !=
+        sequence[sequenceIndex]
+      ) {
         gameActive = false;
         break;
       }
     }
 
     // ----- ROUND COMPLETE ----- //
+
     if (gameActive) {
 
       score++;
 
       drawPlayingScreen(score);
 
-      sequence[sequenceLength] =
+      if (
+        sequenceLength <
+        MAX_SIMON_SEQUENCE
+      ) {
+        sequence[sequenceLength] =
           random(0, numInputs);
 
-      sequenceLength++;
+        sequenceLength++;
 
-      if (sequenceLength >= 100)
-        break;
+      } else {
+        // Maximum safe sequence length reached.
+        gameActive = false;
+      }
     }
   }
 
-  // ----- GAME OVER ----- //
+  consumeAllPressEvents();
+  clearRgbLeds();
+
+  // ----- HIGHSCORE PROCESSING ----- //
+
   newHighScore = false;
   pendingInitials = nullptr;
 
@@ -4475,11 +4729,11 @@ void runSimonsaysGame() {
 
   if (useLight) {
 
-    // Normal mode
-    highScorePosition = insertTopScore(
-      simonHS.normal[simonIndex],
-      score
-    );
+    highScorePosition =
+      insertTopScore(
+        simonHS.normal[simonIndex],
+        score
+      );
 
     if (highScorePosition >= 0) {
 
@@ -4496,13 +4750,13 @@ void runSimonsaysGame() {
       newHighScore = true;
     }
 
-    } else {
+  } else {
 
-    // No-light mode
-    highScorePosition = insertTopScore(
-      simonHS.noLight[simonIndex],
-      score
-    );
+    highScorePosition =
+      insertTopScore(
+        simonHS.noLight[simonIndex],
+        score
+      );
 
     if (highScorePosition >= 0) {
 
@@ -4517,23 +4771,31 @@ void runSimonsaysGame() {
           [highScorePosition];
 
       newHighScore = true;
-      }
     }
+  }
 
   lastScore = score;
 
-  if (newHighScore && pendingInitials != nullptr) {
+  // ----- NEW HIGHSCORE ----- //
+
+  if (
+    newHighScore &&
+    pendingInitials != nullptr
+  ) {
     playVictorySound();
     animateYellowHighscores();
-    startInitialsEntry();
     animateNewHighscore();
+
+    startInitialsEntry();
     return;
   }
-    
+
+  // ----- NORMAL GAME OVER ----- //
+
   playGameOverSound();
   animateGameOver();
+
   currentState = STATE_GAMEOVER;
-  return;
 }
 
   // C. REACTION TIME //
@@ -4542,63 +4804,73 @@ void runReactionGame() {
   currentState = STATE_PLAYING;
   currentGame = GAME_REACTION;
 
-  unsigned long reactionTimes[REACTION_ROUNDS] = {};
+  unsigned long reactionTimes[
+    REACTION_ROUNDS
+  ] = {};
 
-  // Wait for release
-  while (
-    digitalRead(BUTTON_PINS[0]) == LOW ||
-    digitalRead(BUTTON_PINS[1]) == LOW ||
-    digitalRead(BUTTON_PINS[2]) == LOW ||
-    digitalRead(BUTTON_PINS[3]) == LOW ||
-    digitalRead(BUTTON_PINS[4]) == LOW
+  // Prevent the menu-starting press from becoming
+  // an immediate early Reaction press.
+  waitForAllGameInputsReleased();
+  consumeAllPressEvents();
+
+  clearRgbLeds();
+
+  for (
+    int round = 0;
+    round < REACTION_ROUNDS;
+    round++
   ) {
-    delay(1);
-  }
-  while (digitalRead(BUTTON_PINS[0]) == LOW)
-      delay(1);
+    // ----- PREPARE ROUND ----- //
 
-  for (int round = 0; round < REACTION_ROUNDS; round++) {
-
-    // ----- RANDOM WAIT ----- //
     drawReactionWaitScreen();
+
+    clearRgbLeds();
+
+    waitForAllGameInputsReleased();
+    consumeAllPressEvents();
 
     unsigned long waitTime =
       random(500, 2001);
-    // Wait for release
-    while (
-      digitalRead(BUTTON_PINS[0]) == LOW ||
-      digitalRead(BUTTON_PINS[1]) == LOW ||
-      digitalRead(BUTTON_PINS[2]) == LOW ||
-      digitalRead(BUTTON_PINS[3]) == LOW ||
-      digitalRead(BUTTON_PINS[4]) == LOW
-      ) {
-    delay(1);
-    }
 
     unsigned long waitStart =
       millis();
 
     bool earlyPress = false;
 
-    while (millis() - waitStart < waitTime) {
+    // ----- RANDOM WAIT PERIOD ----- //
 
-      for (int i = 0; i < FRET_COUNT; i++) {
+    while (
+      millis() - waitStart <
+      waitTime
+    ) {
+      updateInputs();
 
-        if (digitalRead(BUTTON_PINS[i]) == LOW) {
-
+      for (
+        int fret = 0;
+        fret < FRET_COUNT;
+        fret++
+      ) {
+        if (input.fretPressed[fret]) {
+          input.fretPressed[fret] = false;
           earlyPress = true;
           break;
         }
       }
 
-      if (earlyPress)
+      if (earlyPress) {
         break;
+      }
+
+      delay(1);
     }
 
     // ----- TOO EARLY ----- //
+
     if (earlyPress) {
 
+      consumeAllPressEvents();
       clearRgbLeds();
+
       noTone(NOTE_BUZZER);
       noTone(FX_BUZZER);
 
@@ -4607,23 +4879,29 @@ void runReactionGame() {
       tft.setTextColor(COLOR_TEXT);
       tft.setTextSize(2);
 
-      int16_t x1, y1;
-      uint16_t w, h;
+      int16_t x1;
+      int16_t y1;
+      uint16_t width;
+      uint16_t height;
 
       tft.getTextBounds(
         "TOO FAST!",
-        0, 0,
-        &x1, &y1,
-        &w, &h
+        0,
+        0,
+        &x1,
+        &y1,
+        &width,
+        &height
       );
 
       tft.setCursor(
-        (SCREEN_WIDTH - w) / 2,
+        (SCREEN_WIDTH - width) / 2,
         30
       );
 
       tft.print("TOO FAST!");
 
+      animateGameOver();
       playGameOverSound();
 
       delay(500);
@@ -4635,48 +4913,61 @@ void runReactionGame() {
     }
 
     // ----- START REACTION CUE ----- //
-    int targetFret = random(0, FRET_COUNT);
 
-    // Change WAIT to GO, activate LEDs and play beep
+    int targetFret =
+      random(0, FRET_COUNT);
+
     startReactionCue(targetFret);
 
-    // Begin measuring after the cue becomes active
-    unsigned long startTime = millis();
+    // Begin measuring after the cue is active.
+    unsigned long reactionStart =
+      millis();
 
     bool success = false;
     bool wrongFret = false;
 
+    // ----- WAIT FOR PLAYER RESPONSE ----- //
+
     while (!success) {
 
-      for (int i = 0; i < FRET_COUNT; i++) {
+      updateInputs();
 
-        if (digitalRead(BUTTON_PINS[i]) == LOW) {
-
-          if (
-            reactionIndex == 0 ||
-            i == targetFret
-          ) {
-
-            reactionTimes[round] =
-              millis() - startTime;
-
-            success = true;
-          } else {
-
-            wrongFret = true;
-            success = true;
-          }
-
-          while (
-            digitalRead(BUTTON_PINS[i])
-            == LOW
-          );
+      for (
+        int fret = 0;
+        fret < FRET_COUNT;
+        fret++
+      ) {
+        if (!input.fretPressed[fret]) {
+          continue;
         }
+
+        // Consume the press.
+        input.fretPressed[fret] = false;
+
+        if (
+          reactionIndex == 0 ||
+          fret == targetFret
+        ) {
+          reactionTimes[round] =
+            millis() - reactionStart;
+
+          success = true;
+
+        } else {
+          wrongFret = true;
+          success = true;
+        }
+
+        break;
       }
+
+      delay(1);
     }
 
     clearRgbLeds();
     noTone(NOTE_BUZZER);
+
+    // ----- WRONG FRET ----- //
 
     if (wrongFret) {
 
@@ -4693,15 +4984,13 @@ void runReactionGame() {
 
       waitForGreenPress();
 
+      // Repeat this round.
       round--;
       continue;
     }
 
-    // ----- TURN LEDS OFF ----- //
-    clearRgbLeds();
-    noTone(NOTE_BUZZER);
+    // ----- SHOW ROUND RESULT ----- //
 
-    // ----- SHOW RESULT ----- //
     tft.fillScreen(COLOR_SELECT);
 
     tft.setTextColor(COLOR_BG);
@@ -4717,18 +5006,26 @@ void runReactionGame() {
     waitForGreenPress();
   }
 
-  // ----- CALCULATE RESULT ----- // 
+  // ----- CALCULATE AVERAGE ----- //
 
   unsigned long total = 0;
 
-  for (int i = 0; i < REACTION_ROUNDS; i++) {
-    total += reactionTimes[i];
+  for (
+    int round = 0;
+    round < REACTION_ROUNDS;
+    round++
+  ) {
+    total += reactionTimes[round];
   }
 
   unsigned long average =
     total / REACTION_ROUNDS;
 
-  // ----- GAME OVER ----- //
+  consumeAllPressEvents();
+  clearRgbLeds();
+
+  // ----- HIGHSCORE PROCESSING ----- //
+
   newHighScore = false;
   pendingInitials = nullptr;
 
@@ -4736,16 +5033,18 @@ void runReactionGame() {
 
   if (useLight) {
 
-    // Normal mode
-    highScorePosition = insertTopReactionTime(
-      reactionHS.normal[reactionIndex],
-      average
-    );
+    highScorePosition =
+      insertTopReactionTime(
+        reactionHS.normal[reactionIndex],
+        static_cast<int>(average)
+      );
 
     if (highScorePosition >= 0) {
 
       prepareInitialsSlot(
-        reactionNormalInitials[reactionIndex],
+        reactionNormalInitials[
+          reactionIndex
+        ],
         highScorePosition
       );
 
@@ -4757,18 +5056,20 @@ void runReactionGame() {
       newHighScore = true;
     }
 
-    } else {
+  } else {
 
-    // No-light mode
-    highScorePosition = insertTopReactionTime(
-      reactionHS.noLight[reactionIndex],
-      average
-    );
+    highScorePosition =
+      insertTopReactionTime(
+        reactionHS.noLight[reactionIndex],
+        static_cast<int>(average)
+      );
 
     if (highScorePosition >= 0) {
 
       prepareInitialsSlot(
-        reactionNoLightInitials[reactionIndex],
+        reactionNoLightInitials[
+          reactionIndex
+        ],
         highScorePosition
       );
 
@@ -4778,24 +5079,32 @@ void runReactionGame() {
           [highScorePosition];
 
       newHighScore = true;
-      }
     }
+  }
 
-  lastScore = average;
+  lastScore =
+    static_cast<int>(average);
 
-  if (newHighScore && pendingInitials != nullptr) {
-    animateYellowHighscores();
+  // ----- NEW HIGHSCORE ----- //
+
+  if (
+    newHighScore &&
+    pendingInitials != nullptr
+  ) {
     playVictorySound();
+    animateYellowHighscores();
     animateNewHighscore();
+
     startInitialsEntry();
     return;
   }
-    
+
+  // ----- NORMAL GAME OVER ----- //
 
   playGameOverSound();
   animateGameOver();
+
   currentState = STATE_GAMEOVER;
-  return;
 }
 
   // D. SOLO-JAM      //
@@ -5244,7 +5553,7 @@ void loop() {
         consumeAllPressEvents();
 
         playSelectSound();
-        animateGreenSelect();
+        animateSplashExit();
 
         currentState = STATE_MAIN_MENU;
       }
