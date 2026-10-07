@@ -48,12 +48,24 @@ constexpr int VISIBLE_MENU_ROWS = 4;
 
 constexpr unsigned long MENU_COOLDOWN = 50;
 
+// Animation speed constants
+constexpr int RGB_STEP_FAST_MS = 40;
+constexpr int RGB_STEP_NORMAL_MS = 70;
+constexpr int RGB_HOLD_SHORT_MS = 100;
+constexpr int RGB_FADE_STEP_MS = 25;
+constexpr int RGB_FADE_STEPS = 10;
+
 // ----- 3. PIN DEFINITIONS ----- //
 
 constexpr uint8_t TFT_CS = 17;
 constexpr uint8_t TFT_DC = 16;
 constexpr uint8_t TFT_RST = 20;
 
+// Start and Select
+constexpr uint8_t START_BUTTON_PIN = 0;
+constexpr uint8_t SELECT_BUTTON_PIN = 2;
+
+// Fret buttons
 constexpr uint8_t BUTTON_PINS[FRET_COUNT] = {
   1,  // Green
   3,  // Red
@@ -62,17 +74,33 @@ constexpr uint8_t BUTTON_PINS[FRET_COUNT] = {
   9   // Orange
 };
 
-constexpr uint8_t STRUM_UP_PIN = 27;
-constexpr uint8_t STRUM_DOWN_PIN = 28;
-
+// RGB data
 constexpr uint8_t RGB_NEOPIXEL_PIN = 11; // for simulation
 constexpr uint8_t RGB_DATA_PIN = 11;  // for physical build
 constexpr uint8_t RGB_CLOCK_PIN = 12; // for physical build
 
+// Buzzers
+constexpr uint8_t FX_BUZZER = 14;
 constexpr uint8_t NOTE_BUZZER = 15;
-constexpr uint8_t FX_BUZZER = 26;
+
+// Strum buttons
+constexpr uint8_t STRUM_UP_PIN = 21;
+constexpr uint8_t STRUM_DOWN_PIN = 22;
+// Joystick
+constexpr uint8_t JOYSTICK_X_PIN = 26;
+constexpr uint8_t JOYSTICK_Y_PIN = 27;
+constexpr uint8_t JOYSTICK_BUTTON_PIN = 28;
 
 constexpr uint8_t RGB_BRIGHTNESS = 192;
+
+constexpr int JOYSTICK_CENTER = 512;
+constexpr int JOYSTICK_DEADZONE = 180;
+
+constexpr int JOYSTICK_LOW_THRESHOLD =
+  JOYSTICK_CENTER - JOYSTICK_DEADZONE;
+
+constexpr int JOYSTICK_HIGH_THRESHOLD =
+  JOYSTICK_CENTER + JOYSTICK_DEADZONE;
 
   // ----- RGB LED INDEXES ----- //
 
@@ -96,12 +124,6 @@ constexpr int RGB_STRUM_DOWN = 11;
 
 constexpr int RGB_START = 12;
 constexpr int RGB_SELECT = 13;
-
-// constexpr uint8_t START_BUTTON_PIN =
-  /* actual Polybar pin */; // EDIT lisää tähän start button pin
-
-// constexpr uint8_t SELECT_BUTTON_PIN =
-  /* actual Polybar pin */; // EDIT lisää tähän select button pin
 
 constexpr int RGB_LED_COUNT = 14;
 
@@ -422,6 +444,32 @@ struct ScoreSaveData {
   uint32_t checksum;
 };
 
+// Button input structure
+struct InputState {
+  bool fretHeld[FRET_COUNT];
+  bool fretPressed[FRET_COUNT];
+  bool fretReleased[FRET_COUNT];
+
+  bool strumUpHeld;
+  bool strumUpPressed;
+
+  bool strumDownHeld;
+  bool strumDownPressed;
+
+  bool startHeld;
+  bool startPressed;
+
+  bool selectHeld;
+  bool selectPressed;
+
+  bool joystickPressed;
+  int joystickX;
+  int joystickY;
+};
+// Replace all (digitalRead(JOYSTICK_BUTTON_PIN)) == LOW with "(input.fretPressed[#inputnumberhere#])"
+
+InputState input = {};
+
 // ----- 9. FLASH STORAGE CONSTANTS ----- //
 
 constexpr uint32_t SCORE_FILE_MAGIC = 0x50424152;
@@ -610,10 +658,10 @@ bool bluePressed();
 bool orangePressed();
 bool strumUpPressed();
 bool strumDownPressed();
+void updateInputs();
 
   // C. LEDs and HARDWARE //
 void updateMenuLEDs();
-void turnOffAllInputLights();
 void playStartupFretSequence();
 void waitForGreenPress();
 
@@ -627,6 +675,39 @@ void setFretRgb(
 void setFretColor(
   int fret,
   uint32_t color
+);
+
+void setAllFretsColor(
+  uint32_t color
+);
+
+void setStrumColors(
+  uint32_t upColor,
+  uint32_t downColor
+);
+
+void setUtilityColors(
+  uint32_t startColor,
+  uint32_t selectColor
+);
+
+void setAllInputLightsOff();
+
+void fadeAllFrets(
+  uint8_t red,
+  uint8_t green,
+  uint8_t blue,
+  unsigned long duration
+);
+
+void flashAllFrets(
+  uint32_t color,
+  unsigned long durationMs
+);
+
+void setUtilityColors(
+  uint32_t startColor,
+  uint32_t selectColor
 );
 
 void clearRgbLeds();
@@ -717,7 +798,6 @@ void drawReactionWaitScreen();
 void drawReactionGoScreen();
 void drawReactionTimeScreen(unsigned long reaction);
 void startReactionCue(int targetFret);
-// void drawTooEarlyScreen();
 
   // M. SOLO HELPERS //
 void spawnNote(int fret);
@@ -730,6 +810,7 @@ void drawSoloPlayingScreen();
   // N. GAMES //
 void runSpeedtestGame();
 void runSimonsaysGame();
+
 void runReactionGame();
 void runSoloGame();
 
@@ -846,76 +927,63 @@ bool strumDownPressed() {
 
   // C. HARDWARE & LED FUNCTIONS //
 
-void turnOffAllInputLights() {
-  clearRgbLeds();
-}
-
 void updateMenuLEDs() {
 
-/*
-  rgbLeds.setPixelColor(
-    RGB_START,
+  // Start LED
+  uint32_t startColor =
     digitalRead(START_BUTTON_PIN) == LOW
       ? LED_COLOR_TURQUOISE
-      : LED_COLOR_OFF
-  );
+      : LED_COLOR_OFF;
 
-  rgbLeds.setPixelColor(
-    RGB_SELECT,
+  // Select LED
+  uint32_t selectColor =
     digitalRead(SELECT_BUTTON_PIN) == LOW
       ? LED_COLOR_LAVENDER
-      : LED_COLOR_OFF
-  );
-*/
+      : LED_COLOR_OFF;
 
+  // Joystick center overrides Select with yellow
+  if (
+    digitalRead(JOYSTICK_BUTTON_PIN) == LOW
+  ) {
+    selectColor = LED_COLOR_YELLOW;
+  }
+
+  setUtilityColors(
+    startColor,
+    selectColor
+  );
+
+  // Fret LED pairs
   for (int fret = 0; fret < FRET_COUNT; fret++) {
 
-    if (
+    uint32_t fretColor =
       digitalRead(BUTTON_PINS[fret]) == LOW
-    ) {
-      setFretColor(
-        fret,
-        FRET_RGB_COLORS[fret]
-      );
-    } else {
-      setFretColor(
-        fret,
-        LED_COLOR_OFF
-      );
-    }
+        ? FRET_RGB_COLORS[fret]
+        : LED_COLOR_OFF;
+
+    setFretColor(
+      fret,
+      fretColor
+    );
   }
 
-  // Strum-up LED
-  if (
+  // Strum LEDs
+  uint32_t strumUpColor =
     digitalRead(STRUM_UP_PIN) == LOW
-  ) {
-    rgbLeds.setPixelColor(
-      RGB_STRUM_UP,
-      LED_COLOR_TURQUOISE
-    );
-  } else {
-    rgbLeds.setPixelColor(
-      RGB_STRUM_UP,
-      LED_COLOR_OFF
-    );
-  }
+      ? LED_COLOR_TURQUOISE
+      : LED_COLOR_OFF;
 
-  // Strum-down LED
-  if (
+  uint32_t strumDownColor =
     digitalRead(STRUM_DOWN_PIN) == LOW
-  ) {
-    rgbLeds.setPixelColor(
-      RGB_STRUM_DOWN,
-      LED_COLOR_PINK
-    );
-  } else {
-    rgbLeds.setPixelColor(
-      RGB_STRUM_DOWN,
-      LED_COLOR_OFF
-    );
-  }
+      ? LED_COLOR_PINK
+      : LED_COLOR_OFF;
 
-  // Send all changes together
+  setStrumColors(
+    strumUpColor,
+    strumDownColor
+  );
+
+  // Transmit all 14 pixels once
   rgbLeds.show();
 }
 
@@ -1046,9 +1114,6 @@ void playStartupFretSequence() {
   // Light all five fret RGB LED pairs
   for (int fret = 0; fret < FRET_COUNT; fret++) {
 
-    Serial.print("Startup fret: ");
-    Serial.println(fret);
-
     setFretColor(
       fret,
       FRET_RGB_COLORS[fret]
@@ -1056,24 +1121,14 @@ void playStartupFretSequence() {
   }
 
   // Light both strum LEDs together
-  rgbLeds.setPixelColor(
-    RGB_STRUM_UP,
-    LED_COLOR_TURQUOISE
-  );
-
-  rgbLeds.setPixelColor(
-    RGB_STRUM_DOWN,
+  setStrumColors(
+    LED_COLOR_TURQUOISE,
     LED_COLOR_PINK
   );
 
   // Start and Select can use theme colors
-  rgbLeds.setPixelColor(
-    RGB_START,
-    LED_COLOR_LAVENDER
-  );
-
-  rgbLeds.setPixelColor(
-    RGB_SELECT,
+  setUtilityColors(
+    LED_COLOR_LAVENDER,
     LED_COLOR_YELLOW
   );
 
@@ -1085,13 +1140,6 @@ void playStartupFretSequence() {
   playTone(NOTE_BUZZER, 587, 300);
 
   delay(500);
-
-/* 
-  for (int i = 0; i <5; i++) {
-    playTone(FX_BUZZER, 500 - 70 * i, 16);
-    delay(12);
-  }
-*/
 
   // Turn off all 14 RGB LEDs
   clearRgbLeds();
@@ -1133,8 +1181,6 @@ void setFretColor(
     return;
   }
 
-  // Directly address both physical RGB pixels
-  // belonging to this logical fret.
   rgbLeds.setPixelColor(
     FRET_RGB_PIXELS[fret][0],
     color
@@ -1152,13 +1198,6 @@ void setFretRgb(
   uint8_t green,
   uint8_t blue
 ) {
-  if (
-    fret < 0 ||
-    fret >= FRET_COUNT
-  ) {
-    return;
-  }
-
   setFretColor(
     fret,
     rgbLeds.Color(
@@ -1169,8 +1208,100 @@ void setFretRgb(
   );
 }
 
-void clearRgbLeds() {
+void setAllFretsColor(
+  uint32_t color
+) {
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+    setFretColor(
+      fret,
+      color
+    );
+  }
+}
+
+void setStrumColors(
+  uint32_t upColor,
+  uint32_t downColor
+) {
+  rgbLeds.setPixelColor(
+    RGB_STRUM_UP,
+    upColor
+  );
+
+  rgbLeds.setPixelColor(
+    RGB_STRUM_DOWN,
+    downColor
+  );
+}
+
+void setUtilityColors(
+  uint32_t startColor,
+  uint32_t selectColor
+) {
+  rgbLeds.setPixelColor(
+    RGB_START,
+    startColor
+  );
+
+  rgbLeds.setPixelColor(
+    RGB_SELECT,
+    selectColor
+  );
+}
+
+void setAllInputLightsOff() {
   rgbLeds.clear();
+}
+
+void clearRgbLeds() {
+  setAllInputLightsOff();
+  rgbLeds.show();
+}
+
+void fadeAllFrets(
+  uint8_t red,
+  uint8_t green,
+  uint8_t blue,
+  unsigned long durationMs
+) {
+  unsigned long stepDelay =
+    durationMs / RGB_FADE_STEPS;
+
+  if (stepDelay < 1) {
+    stepDelay = 1;
+  }
+
+  for (
+    int step = RGB_FADE_STEPS;
+    step >= 0;
+    step--
+  ) {
+    for (int fret = 0; fret < FRET_COUNT; fret++) {
+      setFretRgb(
+        fret,
+        red * step / RGB_FADE_STEPS,
+        green * step / RGB_FADE_STEPS,
+        blue * step / RGB_FADE_STEPS
+      );
+    }
+
+    rgbLeds.show();
+    delay(stepDelay);
+  }
+
+  clearRgbLeds();
+}
+
+void flashAllFrets(
+  uint32_t color,
+  unsigned long durationMs
+) {
+  setAllFretsColor(color);
+  rgbLeds.show();
+
+  delay(durationMs);
+
+  setAllFretsColor(LED_COLOR_OFF);
   rgbLeds.show();
 }
 
@@ -1182,17 +1313,16 @@ void animateGreenSelect() {
     rgbLeds.Color(30, 255, 100);
 
   for (int fret = 0; fret < FRET_COUNT; fret++) {
-
     setFretColor(
       fret,
       green
     );
 
     rgbLeds.show();
-    delay(45);
+    delay(RGB_STEP_FAST_MS);
   }
 
-  delay(60);
+  delay(RGB_HOLD_SHORT_MS);
 
   clearRgbLeds();
 }
@@ -1204,25 +1334,26 @@ void animateRedBack() {
   const uint32_t red =
     rgbLeds.Color(255, 25, 45);
 
-  // Begin at Fret 2
+  // Fret 2
   setFretColor(1, red);
   rgbLeds.show();
-  delay(45);
+  delay(RGB_STEP_FAST_MS);
 
-  // Expand left and right
+  // Fret 1 and Fret 3
   setFretColor(0, red);
   setFretColor(2, red);
   rgbLeds.show();
-  delay(45);
+  delay(RGB_STEP_FAST_MS);
 
-  // Continue toward the right edge
+  // Fret 4
   setFretColor(3, red);
   rgbLeds.show();
-  delay(45);
+  delay(RGB_STEP_FAST_MS);
 
+  // Fret 5
   setFretColor(4, red);
   rgbLeds.show();
-  delay(60);
+  delay(RGB_HOLD_SHORT_MS);
 
   clearRgbLeds();
 }
@@ -1234,22 +1365,22 @@ void animateYellowHighscores() {
   const uint32_t yellow =
     rgbLeds.Color(255, 210, 45);
 
+  // Outer frets
   setFretColor(0, yellow);
   setFretColor(4, yellow);
-
   rgbLeds.show();
-  delay(55);
+  delay(RGB_STEP_NORMAL_MS);
 
+  // Inner frets
   setFretColor(1, yellow);
   setFretColor(3, yellow);
-
   rgbLeds.show();
-  delay(55);
+  delay(RGB_STEP_NORMAL_MS);
 
+  // Center fret
   setFretColor(2, yellow);
-
   rgbLeds.show();
-  delay(80);
+  delay(RGB_HOLD_SHORT_MS);
 
   clearRgbLeds();
 }
@@ -1265,37 +1396,41 @@ void animateGameStart(
 
   clearRgbLeds();
 
-  // Light active frets in sequence
+  // Illuminate active frets in sequence
   for (int fret = 0; fret < activeFrets; fret++) {
-
-    setFretRgb(
+    setFretColor(
       fret,
-      FRET_RGB_RED[fret],
-      FRET_RGB_GREEN[fret],
-      FRET_RGB_BLUE[fret]
+      FRET_RGB_COLORS[fret]
     );
 
     rgbLeds.show();
-    delay(45);
+    delay(RGB_STEP_NORMAL_MS);
   }
 
-  delay(80);
+  delay(RGB_HOLD_SHORT_MS);
 
-  // Fade all active frets together
-  for (int level = 10; level >= 0; level--) {
-
+  // Fade only the active frets
+  for (
+    int step = RGB_FADE_STEPS;
+    step >= 0;
+    step--
+  ) {
     for (int fret = 0; fret < activeFrets; fret++) {
-
       setFretRgb(
         fret,
-        FRET_RGB_RED[fret] * level / 10,
-        FRET_RGB_GREEN[fret] * level / 10,
-        FRET_RGB_BLUE[fret] * level / 10
+        FRET_RGB_RED[fret] *
+          step / RGB_FADE_STEPS,
+
+        FRET_RGB_GREEN[fret] *
+          step / RGB_FADE_STEPS,
+
+        FRET_RGB_BLUE[fret] *
+          step / RGB_FADE_STEPS
       );
     }
 
     rgbLeds.show();
-    delay(25);
+    delay(RGB_FADE_STEP_MS);
   }
 
   clearRgbLeds();
@@ -1305,40 +1440,28 @@ void animateGameOver() {
 
   clearRgbLeds();
 
-  for (int level = 10; level >= 0; level--) {
+  setAllFretsColor(
+    LED_COLOR_RED
+  );
 
-    uint8_t red =
-      255 * level / 10;
+  rgbLeds.show();
 
-    uint8_t green =
-      20 * level / 10;
+  delay(RGB_HOLD_SHORT_MS);
 
-    uint8_t blue =
-      35 * level / 10;
-
-    for (int fret = 0; fret < FRET_COUNT; fret++) {
-      setFretRgb(
-        fret,
-        red,
-        green,
-        blue
-      );
-    }
-
-    rgbLeds.show();
-    delay(100);
-  }
-
-  clearRgbLeds();
+  fadeAllFrets(
+    255,
+    20,
+    35,
+    500
+  );
 }
 
 void animateNewHighscore() {
 
   clearRgbLeds();
 
-  // Each fret gets its normal color
+  // Each fret uses its assigned color
   for (int fret = 0; fret < FRET_COUNT; fret++) {
-
     setFretColor(
       fret,
       FRET_RGB_COLORS[fret]
@@ -1348,41 +1471,28 @@ void animateNewHighscore() {
   rgbLeds.show();
   delay(180);
 
-  // Change all frets to gold
+  // Gold
   const uint8_t goldRed = 255;
   const uint8_t goldGreen = 165;
   const uint8_t goldBlue = 20;
 
-  for (int fret = 0; fret < FRET_COUNT; fret++) {
-    setFretRgb(
-      fret,
+  setAllFretsColor(
+    rgbLeds.Color(
       goldRed,
       goldGreen,
       goldBlue
-    );
-  }
+    )
+  );
 
   rgbLeds.show();
   delay(180);
 
-  // Fade gold together
-  for (int level = 10; level >= 0; level--) {
-
-    for (int fret = 0; fret < FRET_COUNT; fret++) {
-
-      setFretRgb(
-        fret,
-        goldRed * level / 10,
-        goldGreen * level / 10,
-        goldBlue * level / 10
-      );
-    }
-
-    rgbLeds.show();
-    delay(35);
-  }
-
-  clearRgbLeds();
+  fadeAllFrets(
+    goldRed,
+    goldGreen,
+    goldBlue,
+    500
+  );
 }
 
   // D. SOUND FUNCTIONS //
@@ -2564,7 +2674,7 @@ void startInitialsEntry() {
   initialsPosition = 0;
   initialsCharacter = 'A';
 
-  turnOffAllInputLights();
+  clearRgbLeds();
 
   currentState = STATE_ENTER_INITIALS;
 }
@@ -2872,7 +2982,7 @@ void drawReactionTimeScreen(unsigned long reaction) {
 
 void startReactionCue(int targetFret) {
 
-  turnOffAllInputLights();
+  clearRgbLeds();
 
   drawReactionGoScreen();
 
@@ -3609,7 +3719,7 @@ void runSpeedtestGame() {
   ) {
     delay(1);
   }
-  turnOffAllInputLights();
+  clearRgbLeds();
 
   int score = 0;
   unsigned long currentDelay = 800;
@@ -3670,14 +3780,9 @@ void runSpeedtestGame() {
         } else {
 
           // Input 5 represents either strum direction
-          rgbLeds.setPixelColor(
-            RGB_STRUM_UP,
-            LED_COLOR_TURQUOISE
-          );
-
-          rgbLeds.setPixelColor(
-            RGB_STRUM_DOWN,
-            LED_COLOR_TURQUOISE
+          setStrumColors(
+            LED_COLOR_TURQUOISE,
+            LED_COLOR_PINK            
           );
 
           rgbLeds.show();
@@ -3685,13 +3790,8 @@ void runSpeedtestGame() {
           delay(100);
 
           // Input 5 represents either strum direction
-          rgbLeds.setPixelColor(
-            RGB_STRUM_UP,
-            LED_COLOR_OFF
-          );
-
-          rgbLeds.setPixelColor(
-            RGB_STRUM_DOWN,
+          setStrumColors(
+            LED_COLOR_OFF,
             LED_COLOR_OFF
           );
 
@@ -3813,15 +3913,15 @@ void runSpeedtestGame() {
   lastScore = score;
 
   if (newHighScore && pendingInitials != nullptr) {
-    animateNewHighscore();
     playVictorySound();
+    animateNewHighscore();
     startInitialsEntry();
     animateYellowHighscores();
     return;
   }
 
-  animateGameOver();
   playGameOverSound();
+  animateGameOver();
   currentState = STATE_GAMEOVER;
   return;
 }
@@ -3887,13 +3987,8 @@ void runSimonsaysGame() {
         } else {
 
           //Input 5 represents either strum direction
-          rgbLeds.setPixelColor(
-            RGB_STRUM_UP,
-            LED_COLOR_TURQUOISE
-          );
-
-          rgbLeds.setPixelColor(
-            RGB_STRUM_DOWN,
+          setStrumColors(
+            LED_COLOR_TURQUOISE,
             LED_COLOR_PINK
           );
 
@@ -3901,13 +3996,8 @@ void runSimonsaysGame() {
 
           delay(250);
 
-          rgbLeds.setPixelColor(
-            RGB_STRUM_UP,
-            LED_COLOR_OFF
-          );
-
-          rgbLeds.setPixelColor(
-            RGB_STRUM_DOWN,
+          setStrumColors(
+            LED_COLOR_OFF,
             LED_COLOR_OFF
           );
 
@@ -4121,15 +4211,15 @@ void runSimonsaysGame() {
   lastScore = score;
 
   if (newHighScore && pendingInitials != nullptr) {
-    animateNewHighscore();
     playVictorySound();
-    startInitialsEntry();
     animateYellowHighscores();
+    startInitialsEntry();
+    animateNewHighscore();
     return;
   }
     
-  animateGameOver();
   playGameOverSound();
+  animateGameOver();
   currentState = STATE_GAMEOVER;
   return;
 }
@@ -4196,7 +4286,7 @@ void runReactionGame() {
     // ----- TOO EARLY ----- //
     if (earlyPress) {
 
-      turnOffAllInputLights();
+      clearRgbLeds();
       noTone(NOTE_BUZZER);
       noTone(FX_BUZZER);
 
@@ -4264,26 +4354,6 @@ void runReactionGame() {
             wrongFret = true;
             success = true;
           }
-/* 
-          } else {
-
-            tft.fillScreen(COLOR_ERROR);
-
-            tft.setTextColor(COLOR_TEXT);
-            tft.setTextSize(2);
-
-            tft.setCursor(10, 20);
-            tft.print("WRONG FRET");
-
-            tft.setCursor(10, 50);
-            tft.print("PRESS GREEN");
-
-            waitForGreenPress();
-
-            round--;
-            success = true;
-          }
-*/
 
           while (
             digitalRead(BUTTON_PINS[i])
@@ -4293,7 +4363,7 @@ void runReactionGame() {
       }
     }
 
-    turnOffAllInputLights();
+    clearRgbLeds();
     noTone(NOTE_BUZZER);
 
     if (wrongFret) {
@@ -4316,7 +4386,7 @@ void runReactionGame() {
     }
 
     // ----- TURN LEDS OFF ----- //
-    turnOffAllInputLights();
+    clearRgbLeds();
     noTone(NOTE_BUZZER);
 
     // ----- SHOW RESULT ----- //
@@ -4402,16 +4472,16 @@ void runReactionGame() {
   lastScore = average;
 
   if (newHighScore && pendingInitials != nullptr) {
-    animateNewHighscore();
-    playVictorySound();
-    startInitialsEntry();
     animateYellowHighscores();
+    playVictorySound();
+    animateNewHighscore();
+    startInitialsEntry();
     return;
   }
     
 
-  animateGameOver();
   playGameOverSound();
+  animateGameOver();
   currentState = STATE_GAMEOVER;
   return;
 }
@@ -4458,57 +4528,92 @@ void runSoloGame() {
     delay(1);
   }
 
-  turnOffAllInputLights();
+  clearRgbLeds();
+
+  // Track previous fret states for press-edge detection
+  bool previousFretState[FRET_COUNT];
+
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+    previousFretState[fret] =
+      digitalRead(BUTTON_PINS[fret]);
+  }
 
   while (true) {
 
+    bool anyFretHeld = false;
+    bool rgbChanged = false;
+
+    // ----- FRET INPUTS ----- //
+
     for (int fret = 0; fret < FRET_COUNT; fret++) {
 
-      if (digitalRead(BUTTON_PINS[fret]) == LOW) {
+      bool currentFretState =
+        digitalRead(BUTTON_PINS[fret]);
 
-        lastActivity = millis();
+      bool fretHeld =
+        currentFretState == LOW;
 
-        int note;
+      bool fretJustPressed =
+        currentFretState == LOW &&
+        previousFretState[fret] == HIGH;
 
-        if (soloIndex == 0) {
-          note = SOLO_MINOR[soloRoot][fret];
-        } else if (soloIndex == 1) {
-          note = SOLO_MAJOR[soloRoot][fret];
-        } else {
-          note = SOLO_BLUES[soloRoot][fret];
-        }
+      anyFretHeld |= fretHeld;
 
-        // Light the matching RGB fret LED
+      // Keep both RGB pixels illuminated while held
+      if (fretHeld) {
         setFretColor(
           fret,
           FRET_RGB_COLORS[fret]
         );
 
-        rgbLeds.show();
+        rgbChanged = true;
+        lastActivity = millis();
+      } else {
+        setFretColor(
+          fret,
+          LED_COLOR_OFF
+        );
+
+      rgbChanged = true;
+      }
+
+      // Play the note only once when initially pressed
+      if (fretJustPressed) {
+
+        int note;
+
+        if (soloIndex == 0) {
+          note =
+            SOLO_MINOR[soloRoot][fret];
+
+        } else if (soloIndex == 1) {
+          note =
+            SOLO_MAJOR[soloRoot][fret];
+
+        } else {
+          note =
+            SOLO_BLUES[soloRoot][fret];
+        }
 
         playTone(
           NOTE_BUZZER,
           note,
           200
         );
+
         spawnNote(fret);
-
-        // Keep the LED on while the fret is held
-        while (
-          digitalRead(BUTTON_PINS[fret]) == LOW
-        ) {
-          delay(1);
-        }
-
-        // Turn the RGB fret LED off when released
-        setFretColor(
-          fret,
-          LED_COLOR_OFF
-        );
-
-        rgbLeds.show();
       }
+
+      previousFretState[fret] =
+        currentFretState;
     }
+
+    // Send all fret RGB changes together
+    if (rgbChanged) {
+      rgbLeds.show();
+    }
+
+    // ----- STRUM-UP: NEXT ROOT ----- //
 
     if (strumUpPressed()) {
 
@@ -4523,8 +4628,9 @@ void runSoloGame() {
 
       soloRoot++;
 
-      if (soloRoot > 5)
+      if (soloRoot > 5) {
         soloRoot = 0;
+      }
 
       drawSoloRoot();
 
@@ -4537,6 +4643,8 @@ void runSoloGame() {
 
       rgbLeds.show();
     }
+
+    // ----- STRUM-DOWN: PREVIOUS ROOT ----- //
 
     if (strumDownPressed()) {
 
@@ -4551,9 +4659,10 @@ void runSoloGame() {
 
       soloRoot--;
 
-      if (soloRoot < 0)
+      if (soloRoot < 0) {
         soloRoot = 5;
-        
+      }
+
       drawSoloRoot();
 
       delay(80);
@@ -4566,30 +4675,47 @@ void runSoloGame() {
       rgbLeds.show();
     }
 
-    // Exit Solo by 5s inactivity
-    if (millis() - lastActivity > 5000) {
+    // ----- MANUAL EXIT COMBINATION ----- //
 
-      animateYellowHighscores();
-      playBackSound();
-
-      turnOffAllInputLights();
-      currentState = STATE_SOLO_MENU;
-      return;
-
-    // Exit Solo by red+orange+strumup
-    } else if (
+    if (
       digitalRead(BUTTON_PINS[1]) == LOW &&
       digitalRead(BUTTON_PINS[4]) == LOW &&
       digitalRead(STRUM_UP_PIN) == LOW
     ) {
+      animateRedBack();
       playBackSound();
-      
-      turnOffAllInputLights();
+
+      clearRgbLeds();
+
       currentState = STATE_SOLO_MENU;
       return;
     }
 
-    tft.fillRect(0, 18, SCREEN_WIDTH, SCREEN_HEIGHT - 18, COLOR_BG);
+    // ----- INACTIVITY EXIT ----- //
+
+    if (
+      !anyFretHeld &&
+      millis() - lastActivity > 5000
+    ) {
+      animateRedBack();
+      playBackSound();
+
+      clearRgbLeds();
+
+      currentState = STATE_SOLO_MENU;
+      return;
+    }
+
+    // ----- MUSIC-NOTE ANIMATION ----- //
+
+    tft.fillRect(
+      0,
+      18,
+      SCREEN_WIDTH,
+      SCREEN_HEIGHT - 18,
+      COLOR_BG
+    );
+
     updateNotes();
     cleanupNotes();
     drawNotes();
@@ -4613,17 +4739,16 @@ void setup() {
   // Strum buttons
   pinMode(STRUM_UP_PIN, INPUT_PULLUP);
   pinMode(STRUM_DOWN_PIN, INPUT_PULLUP);
-/*
-  pinMode(
-    START_BUTTON_PIN,
-    INPUT_PULLUP
-  );
+  
+  // Start & Select buttons
+  pinMode(START_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(SELECT_BUTTON_PIN, INPUT_PULLUP);
 
-  pinMode(
-    SELECT_BUTTON_PIN,
-    INPUT_PULLUP
-  );
-*/ // START & SELECT BUTTONS EDIT
+  // Joystick axes
+  pinMode(JOYSTICK_X_PIN, INPUT);
+  pinMode(JOYSTICK_Y_PIN, INPUT);
+  // Joystick center button
+  pinMode(JOYSTICK_BUTTON_PIN, INPUT_PULLUP);
 
   // Fret LEDs
   rgbLeds.begin();
@@ -4711,9 +4836,49 @@ void setup() {
   lastStrumDown = digitalRead(STRUM_DOWN_PIN);
 
   drawSplashScreen();
+  Serial.println("Joystick and buttons ready");
 }
 
 void loop() {
+
+  // Temporary input diagnostics EDIT: REMOVE FROM HERE *TO*
+  static unsigned long lastJoystickPrint = 0;
+
+  if (
+    millis() - lastJoystickPrint >= 250
+  ) {
+    lastJoystickPrint = millis();
+
+    int joystickX =
+      analogRead(JOYSTICK_X_PIN);
+
+    int joystickY =
+      analogRead(JOYSTICK_Y_PIN);
+
+    bool joystickPressed =
+      digitalRead(JOYSTICK_BUTTON_PIN) == LOW;
+
+    bool startPressed =
+      digitalRead(START_BUTTON_PIN) == LOW;
+
+    bool selectPressed =
+      digitalRead(SELECT_BUTTON_PIN) == LOW;
+
+    Serial.print("X: ");
+    Serial.print(joystickX);
+
+    Serial.print(" Y: ");
+    Serial.print(joystickY);
+
+    Serial.print(" JOY: ");
+    Serial.print(joystickPressed);
+
+    Serial.print(" START: ");
+    Serial.print(startPressed);
+
+    Serial.print(" SELECT: ");
+    Serial.println(selectPressed);
+  }  // Temporal EDIT REMOVE || *TO* HERE 
 
   // Check for state changes and update the display accordingly
   if (currentState != previousState) {
@@ -4808,7 +4973,7 @@ void loop() {
     if (redPressed()) {
         playBackSound();
         animateRedBack();
-        turnOffAllInputLights();
+        clearRgbLeds();
         currentState = STATE_SPLASH;
     }
       break;
