@@ -446,29 +446,65 @@ struct ScoreSaveData {
 
 // Button input structure
 struct InputState {
+
+  // Five fret buttons
   bool fretHeld[FRET_COUNT];
   bool fretPressed[FRET_COUNT];
   bool fretReleased[FRET_COUNT];
 
+  // Strum up
   bool strumUpHeld;
   bool strumUpPressed;
+  bool strumUpReleased;
 
+  // Strum down
   bool strumDownHeld;
   bool strumDownPressed;
+  bool strumDownReleased;
 
+  // Start
   bool startHeld;
   bool startPressed;
+  bool startReleased;
 
+  // Select
   bool selectHeld;
   bool selectPressed;
+  bool selectReleased;
 
+  // Joystick center button
+  bool joystickHeld;
   bool joystickPressed;
+  bool joystickReleased;
+
+  // Joystick analog axes
   int joystickX;
   int joystickY;
+
+  // Joystick directions
+  bool joystickLeft;
+  bool joystickRight;
+  bool joystickUp;
+  bool joystickDown;
 };
+
+struct PreviousInputState {
+
+  bool fretHeld[FRET_COUNT];
+
+  bool strumUpHeld;
+  bool strumDownHeld;
+
+  bool startHeld;
+  bool selectHeld;
+
+  bool joystickHeld;
+};
+
 // Replace all (digitalRead(JOYSTICK_BUTTON_PIN)) == LOW with "(input.fretPressed[#inputnumberhere#])"
 
 InputState input = {};
+PreviousInputState previousInput = {};
 
 // ----- 9. FLASH STORAGE CONSTANTS ----- //
 
@@ -619,15 +655,6 @@ bool scoreStorageReady = false;
 
   // ----- INPUT EDGE STATE ----- //
 
-bool lastGreen = HIGH;
-bool lastRed = HIGH;
-bool lastYellow = HIGH;
-bool lastBlue = HIGH;
-bool lastOrange = HIGH;
-
-bool lastStrumUp = HIGH;
-bool lastStrumDown = HIGH;
-
 unsigned long lastMenuInput = 0;
 
   /*/ Music notes for different frets
@@ -652,13 +679,22 @@ int getFirstVisibleItem(
   // B. INPUT //
 bool menuReady();
 bool greenPressed();
+
 bool redPressed();
 bool yellowPressed();
 bool bluePressed();
 bool orangePressed();
 bool strumUpPressed();
 bool strumDownPressed();
+
+bool startPressed();
+bool selectPressed();
+bool joystickButtonPressed();
+
+void initializeInputs();
 void updateInputs();
+
+void consumeAllPressEvents();
 
   // C. LEDs and HARDWARE //
 void updateMenuLEDs();
@@ -856,96 +892,378 @@ bool menuReady() {
 }
 
 bool greenPressed() {
-  bool green = digitalRead(BUTTON_PINS[0]);
-  bool pressed =
-      (green == LOW &&
-       lastGreen == HIGH &&
-       menuReady());
-  lastGreen = green;
-  return pressed;
+  if (
+    input.fretPressed[0] &&
+    menuReady()
+  ) {
+    input.fretPressed[0] = false;
+    return true;
+  }
+
+  return false;
 }
 
 bool redPressed() {
-  bool red = digitalRead(BUTTON_PINS[1]);
-  bool pressed =
-      (red == LOW &&
-       lastRed == HIGH &&
-       menuReady());
-  lastRed = red;
-  return pressed;
+  if (
+    input.fretPressed[1] &&
+    menuReady()
+  ) {
+    input.fretPressed[1] = false;
+    return true;
+  }
+
+  return false;
 }
 
 bool yellowPressed() {
-  bool yellow = digitalRead(BUTTON_PINS[2]);
-  bool pressed =
-      (yellow == LOW &&
-       lastYellow == HIGH &&
-       menuReady());
-  lastYellow = yellow;
-  return pressed;
+  if (
+    input.fretPressed[2] &&
+    menuReady()
+  ) {
+    input.fretPressed[2] = false;
+    return true;
+  }
+
+  return false;
 }
 
 bool bluePressed() {
-  bool blue = digitalRead(BUTTON_PINS[3]);
-  bool pressed =
-      (blue == LOW &&
-       lastBlue == HIGH &&
-       menuReady());
-  lastBlue = blue;
-  return pressed;
+  if (
+    input.fretPressed[3] &&
+    menuReady()
+  ) {
+    input.fretPressed[3] = false;
+    return true;
+  }
+
+  return false;
 }
 
 bool orangePressed() {
-  bool orange = digitalRead(BUTTON_PINS[4]);
-  bool pressed =
-      (orange == LOW &&
-       lastOrange == HIGH &&
-       menuReady());
-  lastOrange = orange;
-  return pressed;
+  if (
+    input.fretPressed[4] &&
+    menuReady()
+  ) {
+    input.fretPressed[4] = false;
+    return true;
+  }
+
+  return false;
 }
 
 bool strumUpPressed() {
-  bool strumUp = digitalRead(STRUM_UP_PIN);
-  bool pressed =
-      (strumUp == LOW &&
-       lastStrumUp == HIGH &&
-       menuReady());
-  lastStrumUp = strumUp;
-  return pressed;
+  if (
+    input.strumUpPressed &&
+    menuReady()
+  ) {
+    input.strumUpPressed = false;
+    return true;
+  }
+
+  return false;
 }
 
 bool strumDownPressed() {
-  bool strumDown = digitalRead(STRUM_DOWN_PIN);
-  bool pressed =
-      (strumDown == LOW &&
-       lastStrumDown == HIGH &&
-       menuReady());
-  lastStrumDown = strumDown;
-  return pressed;
+  if (
+    input.strumDownPressed &&
+    menuReady()
+  ) {
+    input.strumDownPressed = false;
+    return true;
+  }
+
+  return false;
+}
+
+bool startPressed() {
+  if (
+    input.startPressed &&
+    menuReady()
+  ) {
+    input.startPressed = false;
+    return true;
+  }
+
+  return false;
+}
+
+bool selectPressed() {
+  if (
+    input.selectPressed &&
+    menuReady()
+  ) {
+    input.selectPressed = false;
+    return true;
+  }
+
+  return false;
+}
+
+bool joystickButtonPressed() {
+  if (
+    input.joystickPressed &&
+    menuReady()
+  ) {
+    input.joystickPressed = false;
+    return true;
+  }
+
+  return false;
+}
+
+void initializeInputs() {
+
+  // Read initial fret states
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+
+    bool held =
+      digitalRead(BUTTON_PINS[fret]) == LOW;
+
+    previousInput.fretHeld[fret] = held;
+
+    input.fretHeld[fret] = held;
+    input.fretPressed[fret] = false;
+    input.fretReleased[fret] = false;
+  }
+
+  // Read initial strum states
+  previousInput.strumUpHeld =
+    digitalRead(STRUM_UP_PIN) == LOW;
+
+  previousInput.strumDownHeld =
+    digitalRead(STRUM_DOWN_PIN) == LOW;
+
+  // Read initial utility-button states
+  previousInput.startHeld =
+    digitalRead(START_BUTTON_PIN) == LOW;
+
+  previousInput.selectHeld =
+    digitalRead(SELECT_BUTTON_PIN) == LOW;
+
+  // Read initial joystick button state
+  previousInput.joystickHeld =
+    digitalRead(JOYSTICK_BUTTON_PIN) == LOW;
+
+  // Copy initial held states
+  input.strumUpHeld =
+    previousInput.strumUpHeld;
+
+  input.strumDownHeld =
+    previousInput.strumDownHeld;
+
+  input.startHeld =
+    previousInput.startHeld;
+
+  input.selectHeld =
+    previousInput.selectHeld;
+
+  input.joystickHeld =
+    previousInput.joystickHeld;
+
+  // No edge events exist during initialization
+  input.strumUpPressed = false;
+  input.strumUpReleased = false;
+
+  input.strumDownPressed = false;
+  input.strumDownReleased = false;
+
+  input.startPressed = false;
+  input.startReleased = false;
+
+  input.selectPressed = false;
+  input.selectReleased = false;
+
+  input.joystickPressed = false;
+  input.joystickReleased = false;
+
+  // Read joystick axes
+  input.joystickX =
+    analogRead(JOYSTICK_X_PIN);
+
+  input.joystickY =
+    analogRead(JOYSTICK_Y_PIN);
+
+  input.joystickLeft = false;
+  input.joystickRight = false;
+  input.joystickUp = false;
+  input.joystickDown = false;
+}
+
+void updateInputs() {
+
+  // ----- FRET BUTTONS ----- //
+
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+
+    bool held =
+      digitalRead(BUTTON_PINS[fret]) == LOW;
+
+    input.fretPressed[fret] =
+      held &&
+      !previousInput.fretHeld[fret];
+
+    input.fretReleased[fret] =
+      !held &&
+      previousInput.fretHeld[fret];
+
+    input.fretHeld[fret] = held;
+
+    previousInput.fretHeld[fret] = held;
+  }
+
+  // ----- STRUM UP ----- //
+
+  bool strumUpHeld =
+    digitalRead(STRUM_UP_PIN) == LOW;
+
+  input.strumUpPressed =
+    strumUpHeld &&
+    !previousInput.strumUpHeld;
+
+  input.strumUpReleased =
+    !strumUpHeld &&
+    previousInput.strumUpHeld;
+
+  input.strumUpHeld = strumUpHeld;
+
+  previousInput.strumUpHeld =
+    strumUpHeld;
+
+  // ----- STRUM DOWN ----- //
+
+  bool strumDownHeld =
+    digitalRead(STRUM_DOWN_PIN) == LOW;
+
+  input.strumDownPressed =
+    strumDownHeld &&
+    !previousInput.strumDownHeld;
+
+  input.strumDownReleased =
+    !strumDownHeld &&
+    previousInput.strumDownHeld;
+
+  input.strumDownHeld =
+    strumDownHeld;
+
+  previousInput.strumDownHeld =
+    strumDownHeld;
+
+  // ----- START ----- //
+
+  bool startHeld =
+    digitalRead(START_BUTTON_PIN) == LOW;
+
+  input.startPressed =
+    startHeld &&
+    !previousInput.startHeld;
+
+  input.startReleased =
+    !startHeld &&
+    previousInput.startHeld;
+
+  input.startHeld = startHeld;
+
+  previousInput.startHeld =
+    startHeld;
+
+  // ----- SELECT ----- //
+
+  bool selectHeld =
+    digitalRead(SELECT_BUTTON_PIN) == LOW;
+
+  input.selectPressed =
+    selectHeld &&
+    !previousInput.selectHeld;
+
+  input.selectReleased =
+    !selectHeld &&
+    previousInput.selectHeld;
+
+  input.selectHeld = selectHeld;
+
+  previousInput.selectHeld =
+    selectHeld;
+
+  // ----- JOYSTICK CENTER BUTTON ----- //
+
+  bool joystickHeld =
+    digitalRead(JOYSTICK_BUTTON_PIN) == LOW;
+
+  input.joystickPressed =
+    joystickHeld &&
+    !previousInput.joystickHeld;
+
+  input.joystickReleased =
+    !joystickHeld &&
+    previousInput.joystickHeld;
+
+  input.joystickHeld = joystickHeld;
+
+  previousInput.joystickHeld =
+    joystickHeld;
+
+  // ----- JOYSTICK AXES ----- //
+
+  input.joystickX =
+    analogRead(JOYSTICK_X_PIN);
+
+  input.joystickY =
+    analogRead(JOYSTICK_Y_PIN);
+
+  // Wokwi horizontal direction:
+  // high = left, low = right
+  input.joystickLeft =
+    input.joystickX >
+    JOYSTICK_HIGH_THRESHOLD;
+
+  input.joystickRight =
+    input.joystickX <
+    JOYSTICK_LOW_THRESHOLD;
+
+  // Wokwi vertical direction:
+  // high = up, low = down
+  input.joystickUp =
+    input.joystickY >
+    JOYSTICK_HIGH_THRESHOLD;
+
+  input.joystickDown =
+    input.joystickY <
+    JOYSTICK_LOW_THRESHOLD;
+}
+
+void consumeAllPressEvents() {
+
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+    input.fretPressed[fret] = false;
+  }
+
+  input.strumUpPressed = false;
+  input.strumDownPressed = false;
+
+  input.startPressed = false;
+  input.selectPressed = false;
+
+  input.joystickPressed = false;
 }
 
   // C. HARDWARE & LED FUNCTIONS //
 
 void updateMenuLEDs() {
 
-  // Start LED
   uint32_t startColor =
-    digitalRead(START_BUTTON_PIN) == LOW
+    input.startHeld
       ? LED_COLOR_TURQUOISE
       : LED_COLOR_OFF;
 
-  // Select LED
   uint32_t selectColor =
-    digitalRead(SELECT_BUTTON_PIN) == LOW
+    input.selectHeld
       ? LED_COLOR_LAVENDER
       : LED_COLOR_OFF;
 
   // Joystick center overrides Select with yellow
-  if (
-    digitalRead(JOYSTICK_BUTTON_PIN) == LOW
-  ) {
-    selectColor = LED_COLOR_YELLOW;
+  if (input.joystickHeld) {
+    selectColor =
+      LED_COLOR_YELLOW;
   }
 
   setUtilityColors(
@@ -953,11 +1271,11 @@ void updateMenuLEDs() {
     selectColor
   );
 
-  // Fret LED pairs
+  // Fret pairs
   for (int fret = 0; fret < FRET_COUNT; fret++) {
 
     uint32_t fretColor =
-      digitalRead(BUTTON_PINS[fret]) == LOW
+      input.fretHeld[fret]
         ? FRET_RGB_COLORS[fret]
         : LED_COLOR_OFF;
 
@@ -967,23 +1285,17 @@ void updateMenuLEDs() {
     );
   }
 
-  // Strum LEDs
-  uint32_t strumUpColor =
-    digitalRead(STRUM_UP_PIN) == LOW
-      ? LED_COLOR_TURQUOISE
-      : LED_COLOR_OFF;
-
-  uint32_t strumDownColor =
-    digitalRead(STRUM_DOWN_PIN) == LOW
-      ? LED_COLOR_PINK
-      : LED_COLOR_OFF;
-
+  // Strum pixels
   setStrumColors(
-    strumUpColor,
-    strumDownColor
+    input.strumUpHeld
+      ? LED_COLOR_TURQUOISE
+      : LED_COLOR_OFF,
+
+    input.strumDownHeld
+      ? LED_COLOR_PINK
+      : LED_COLOR_OFF
   );
 
-  // Transmit all 14 pixels once
   rgbLeds.show();
 }
 
@@ -1253,11 +1565,6 @@ void setAllInputLightsOff() {
   rgbLeds.clear();
 }
 
-void clearRgbLeds() {
-  setAllInputLightsOff();
-  rgbLeds.show();
-}
-
 void fadeAllFrets(
   uint8_t red,
   uint8_t green,
@@ -1290,6 +1597,11 @@ void fadeAllFrets(
   }
 
   clearRgbLeds();
+}
+
+void clearRgbLeds() {
+  setAllInputLightsOff();
+  rgbLeds.show();
 }
 
 void flashAllFrets(
@@ -4825,62 +5137,17 @@ void setup() {
   currentState = STATE_SPLASH;
   previousState = STATE_SPLASH;
 
-  // Read actual button states
-  lastGreen = digitalRead(BUTTON_PINS[0]);
-  lastRed = digitalRead(BUTTON_PINS[1]);
-  lastYellow = digitalRead(BUTTON_PINS[2]);
-  lastBlue = digitalRead(BUTTON_PINS[3]);
-  lastOrange = digitalRead(BUTTON_PINS[4]);
-
-  lastStrumUp = digitalRead(STRUM_UP_PIN);
-  lastStrumDown = digitalRead(STRUM_DOWN_PIN);
-
   drawSplashScreen();
   Serial.println("Joystick and buttons ready");
 }
 
 void loop() {
 
-  // Temporary input diagnostics EDIT: REMOVE FROM HERE *TO*
-  static unsigned long lastJoystickPrint = 0;
+  // Read all hardware inputs once
+  updateInputs();
 
-  if (
-    millis() - lastJoystickPrint >= 250
-  ) {
-    lastJoystickPrint = millis();
+  // ----- DRAW SCREEN AFTER STATE CHANGE ----- //
 
-    int joystickX =
-      analogRead(JOYSTICK_X_PIN);
-
-    int joystickY =
-      analogRead(JOYSTICK_Y_PIN);
-
-    bool joystickPressed =
-      digitalRead(JOYSTICK_BUTTON_PIN) == LOW;
-
-    bool startPressed =
-      digitalRead(START_BUTTON_PIN) == LOW;
-
-    bool selectPressed =
-      digitalRead(SELECT_BUTTON_PIN) == LOW;
-
-    Serial.print("X: ");
-    Serial.print(joystickX);
-
-    Serial.print(" Y: ");
-    Serial.print(joystickY);
-
-    Serial.print(" JOY: ");
-    Serial.print(joystickPressed);
-
-    Serial.print(" START: ");
-    Serial.print(startPressed);
-
-    Serial.print(" SELECT: ");
-    Serial.println(selectPressed);
-  }  // Temporal EDIT REMOVE || *TO* HERE 
-
-  // Check for state changes and update the display accordingly
   if (currentState != previousState) {
 
     switch (currentState) {
@@ -4920,8 +5187,9 @@ void loop() {
       case STATE_SOLO_MENU:
         drawSoloMenu();
         break;
-        
+
       case STATE_PLAYING:
+        // Game functions draw their own screens.
         break;
 
       case STATE_GAMEOVER:
@@ -4932,10 +5200,12 @@ void loop() {
         drawInitialsEntry();
         break;
     }
+
     previousState = currentState;
   }
-  
-  // Global button state updates for LEDs and menu navigation
+
+  // ----- LIVE RGB INPUT FEEDBACK ----- //
+
   if (
     currentState == STATE_SPLASH ||
     currentState == STATE_MAIN_MENU ||
@@ -4948,58 +5218,89 @@ void loop() {
     updateMenuLEDs();
   }
 
+  // ----- UPDATE CURRENT STATE ----- //
+
   switch (currentState) {
 
-    case STATE_SPLASH:
+    case STATE_SPLASH: {
 
-    if (digitalRead(BUTTON_PINS[0]) == LOW ||
-        digitalRead(BUTTON_PINS[1]) == LOW ||
-        digitalRead(BUTTON_PINS[2]) == LOW ||
-        digitalRead(BUTTON_PINS[3]) == LOW ||
-        digitalRead(BUTTON_PINS[4]) == LOW ||
-        digitalRead(STRUM_UP_PIN) == LOW ||
-        digitalRead(STRUM_DOWN_PIN) == LOW) {
+      bool anyInputPressed =
+        input.strumUpPressed ||
+        input.strumDownPressed ||
+        input.startPressed ||
+        input.selectPressed ||
+        input.joystickPressed;
 
-      playSelectSound();
-      animateGreenSelect();
-      currentState = STATE_MAIN_MENU;
+      for (int fret = 0; fret < FRET_COUNT; fret++) {
+        if (input.fretPressed[fret]) {
+          anyInputPressed = true;
+          break;
+        }
+      }
+
+      if (anyInputPressed) {
+
+        // Consume all press events so the same input
+        consumeAllPressEvents();
+
+        playSelectSound();
+        animateGreenSelect();
+
+        currentState = STATE_MAIN_MENU;
+      }
+
+      break;
     }
 
-    break;
+    case STATE_MAIN_MENU: {
 
-    case STATE_MAIN_MENU:
-    updateMainMenu();
+      updateMainMenu();
 
-    if (redPressed()) {
+      if (redPressed()) {
         playBackSound();
         animateRedBack();
         clearRgbLeds();
-        currentState = STATE_SPLASH;
-    }
-      break;
 
-    case STATE_SPEEDTEST_MENU:
+        currentState = STATE_SPLASH;
+      }
+
+      break;
+    }
+
+    case STATE_SPEEDTEST_MENU: {
+
       updateSpeedtestMenu();
       break;
+    }
 
-    case STATE_SIMON_MENU:
+    case STATE_SIMON_MENU: {
+
       updateSimonMenu();
       break;
+    }
 
-    case STATE_REACTION_MENU:
+    case STATE_REACTION_MENU: {
+
       updateReactionMenu();
       break;
+    }
 
-    case STATE_SOLO_MENU:
+    case STATE_SOLO_MENU: {
+
       updateSoloMenu();
       break;
-        
-    case STATE_PLAYING:
-      break;
-      
-    case STATE_GAMEOVER:
+    }
 
-    if (greenPressed()) {
+    case STATE_PLAYING: {
+
+      // Blocking game functions currently handle
+      // their own input processing.
+      break;
+    }
+
+    case STATE_GAMEOVER: {
+
+      if (greenPressed()) {
 
         playSelectSound();
         animateGreenSelect();
@@ -5014,54 +5315,61 @@ void loop() {
 
         switch (currentGame) {
 
-            case GAME_SPEEDTEST:
-                runSpeedtestGame();
-                break;
+          case GAME_SPEEDTEST:
+            runSpeedtestGame();
+            break;
 
-            case GAME_SIMON:
-                runSimonsaysGame();
-                break;
+          case GAME_SIMON:
+            runSimonsaysGame();
+            break;
 
-            case GAME_REACTION:
-                runReactionGame();
-                break;
+          case GAME_REACTION:
+            runReactionGame();
+            break;
 
-            case GAME_SOLO:
-                runSoloGame();
-                break;
+          case GAME_SOLO:
+            runSoloGame();
+            break;
         }
-    }
 
-    if (redPressed()) {
+      } else if (redPressed()) {
 
         playBackSound();
         animateRedBack();
 
         switch (currentGame) {
 
-            case GAME_SPEEDTEST:
-                currentState = STATE_SPEEDTEST_MENU;
-                break;
+          case GAME_SPEEDTEST:
+            currentState =
+              STATE_SPEEDTEST_MENU;
+            break;
 
-            case GAME_SIMON:
-                currentState = STATE_SIMON_MENU;
-                break;
+          case GAME_SIMON:
+            currentState =
+              STATE_SIMON_MENU;
+            break;
 
-            case GAME_REACTION:
-                currentState = STATE_REACTION_MENU;
-                break;
+          case GAME_REACTION:
+            currentState =
+              STATE_REACTION_MENU;
+            break;
 
-            case GAME_SOLO:
-                currentState = STATE_SOLO_MENU;
-                break;
+          case GAME_SOLO:
+            currentState =
+              STATE_SOLO_MENU;
+            break;
         }
-    }
-      break;
+      }
 
-    case STATE_ENTER_INITIALS:
+      break;
+    }
+
+    case STATE_ENTER_INITIALS: {
+
       updateInitialsEntry();
       break;
-
+    }
   }
+
   delay(10);
 }
