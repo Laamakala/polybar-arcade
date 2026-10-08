@@ -48,11 +48,23 @@ constexpr int VISIBLE_MENU_ROWS = 4;
 
 constexpr unsigned long MENU_COOLDOWN = 50;
 
+// Settings menu-count constants:
+constexpr int SETTINGS_COUNT = 5;
+
+constexpr uint8_t RGB_BRIGHTNESS_DEFAULT = 192;
+constexpr uint8_t RGB_BRIGHTNESS_MIN = 16;
+constexpr uint8_t RGB_BRIGHTNESS_MAX = 255;
+constexpr uint8_t RGB_BRIGHTNESS_STEP = 16;
+
+constexpr unsigned long SOLO_TIMEOUT_MIN_MS = 2000;
+constexpr unsigned long SOLO_TIMEOUT_MAX_MS = 20000;
+constexpr unsigned long SOLO_TIMEOUT_STEP_MS = 2000;
+
 // Animation speed constants
 constexpr int RGB_STEP_FAST_MS = 40;
 constexpr int RGB_STEP_NORMAL_MS = 70;
 constexpr int RGB_STEP_SLOW_MS = 140;
-constexpr int RGB_HOLD_SHORT_MS = 100;
+constexpr int RGB_HOLD_SHORT_MS = 75;
 constexpr int RGB_FADE_STEP_MS = 50;
 constexpr int RGB_FADE_STEPS = 15;
 
@@ -91,8 +103,6 @@ constexpr uint8_t STRUM_DOWN_PIN = 22;
 constexpr uint8_t JOYSTICK_X_PIN = 26;
 constexpr uint8_t JOYSTICK_Y_PIN = 27;
 constexpr uint8_t JOYSTICK_BUTTON_PIN = 28;
-
-constexpr uint8_t RGB_BRIGHTNESS = 192;
 
 constexpr int JOYSTICK_CENTER = 512;
 constexpr int JOYSTICK_DEADZONE = 180;
@@ -333,6 +343,17 @@ const int SOLO_BLUES[6][5] = {
   { 1175, 1397, 1568, 1760, 2093 }
 };
 
+const unsigned int GAME_SCALE[FRET_COUNT] = {
+  262,  // C4
+  311,  // Eb4
+  349,  // F4
+  392,  // G4
+  466   // Bb4
+};
+
+constexpr unsigned int GAME_STRUM_NOTE =
+  523;  // C5
+
 // Menu sound scale_4
 const int MENU_SCALE_4[4] = {
     220, // A
@@ -368,6 +389,7 @@ enum AppState {
   STATE_SIMON_MENU,
   STATE_REACTION_MENU,
   STATE_SOLO_MENU,
+  STATE_SETTINGS_MENU,
   STATE_PLAYING,
   STATE_GAMEOVER,
   STATE_ENTER_INITIALS
@@ -487,6 +509,12 @@ struct InputState {
   bool joystickRight;
   bool joystickUp;
   bool joystickDown;
+
+  // Fresh direction events
+  bool joystickLeftPressed;
+  bool joystickRightPressed;
+  bool joystickUpPressed;
+  bool joystickDownPressed;
 };
 
 struct PreviousInputState {
@@ -500,6 +528,11 @@ struct PreviousInputState {
   bool selectHeld;
 
   bool joystickHeld;
+
+  bool joystickLeft;
+  bool joystickRight;
+  bool joystickUp;
+  bool joystickDown;
 };
 
 // Replace all (digitalRead(JOYSTICK_BUTTON_PIN)) == LOW with "(input.fretPressed[#inputnumberhere#])"
@@ -556,6 +589,15 @@ const char* soloOptions[SOLO_COUNT] = {
   "blues"
 };
 
+// settings menu options
+const char* settingsOptions[SETTINGS_COUNT] = {
+  "RGB lvl",
+  "sound",
+  "solo t/o",
+  "RGB test",
+  "back"
+};
+
 // ----- 11. GLOBAL VARIABLES ----- //
 
   // ----- APPLICATION STATE ----- //
@@ -572,6 +614,11 @@ GameType currentGame = GAME_SPEEDTEST;
 bool soundEnabled = true;
 bool useLight = true;
 bool useSound = true;
+uint8_t rgbBrightness =
+  RGB_BRIGHTNESS_DEFAULT;
+
+unsigned long soloTimeoutMs =
+  5000;
 
   // ----- MENU INDEXES ----- //
 
@@ -580,6 +627,8 @@ int speedtestIndex = 0;
 int simonIndex = 0;
 int reactionIndex = 0;
 int soloIndex = 0;
+int settingsIndex = 0;
+
 
   // ----- LEADERBOARD SCREEN STATE ----- //
 
@@ -677,6 +726,10 @@ int getFirstVisibleItem(
   int visibleRows
 );
 
+void showStateImmediately(
+  AppState newState
+);
+
   // B. INPUT //
 bool menuReady();
 bool greenPressed();
@@ -702,6 +755,9 @@ void waitForAllGameInputsReleased();
 void updateMenuLEDs();
 void playStartupFretSequence();
 void waitForGreenPress();
+
+void increaseRgbBrightness();
+void decreaseRgbBrightness();
 
 void setFretRgb(
   int fret,
@@ -761,6 +817,8 @@ void animateGameStart(
 
 void animateGameOver();
 void animateNewHighscore();
+void animateSelectSettings();
+void animateRgbTest();
 
   // D. SOUND //
 void playTone(int buzzerPin, unsigned int frequency, unsigned long duration);
@@ -805,6 +863,10 @@ void drawMainMenu();
 void drawMenuControls();
 void drawPlayingScreen(int score);
 void drawGameOverScreen(int score);
+void drawStateScreen(
+  AppState state
+);
+void drawSettingsMenu();
 
   // H. MENUS //
 void drawSpeedtestMenu();
@@ -817,6 +879,7 @@ void updateSpeedtestMenu();
 void updateSimonMenu();
 void updateReactionMenu();
 void updateSoloMenu();
+void updateSettingsMenu();
 
   // I. LEADERBOARDS //
 void drawSpeedLeaderboard();
@@ -883,6 +946,19 @@ int getFirstVisibleItem(
   }
 
   return firstVisible;
+}
+
+void showStateImmediately(
+  AppState newState
+) {
+  currentState = newState;
+
+  drawStateScreen(
+    currentState
+  );
+
+  previousState =
+    currentState;
 }
 
   // B. INPUT FUNCTIONS //
@@ -1091,6 +1167,20 @@ void initializeInputs() {
   input.joystickRight = false;
   input.joystickUp = false;
   input.joystickDown = false;
+
+  input.joystickLeftPressed = false;
+  input.joystickRightPressed = false;
+  input.joystickUpPressed = false;
+  input.joystickDownPressed = false;
+
+  previousInput.joystickUp = false;
+  previousInput.joystickDown = false;
+
+  previousInput.joystickLeft = false;
+  previousInput.joystickRight = false;
+
+  input.joystickLeftPressed = false;
+  input.joystickRightPressed = false;
 }
 
 void updateInputs() {
@@ -1206,33 +1296,78 @@ void updateInputs() {
   previousInput.joystickHeld =
     joystickHeld;
 
-  // ----- JOYSTICK AXES ----- //
+// ----- JOYSTICK AXES ----- //
 
-  input.joystickX =
-    analogRead(JOYSTICK_X_PIN);
+input.joystickX =
+  analogRead(JOYSTICK_X_PIN);
 
-  input.joystickY =
-    analogRead(JOYSTICK_Y_PIN);
+input.joystickY =
+  analogRead(JOYSTICK_Y_PIN);
+
+// ----- JOYSTICK DIRECTIONS ----- //
 
   // Wokwi horizontal direction:
   // high = left, low = right
-  input.joystickLeft =
+  bool joystickLeft =
     input.joystickX >
     JOYSTICK_HIGH_THRESHOLD;
 
-  input.joystickRight =
+  bool joystickRight =
     input.joystickX <
     JOYSTICK_LOW_THRESHOLD;
 
   // Wokwi vertical direction:
   // high = up, low = down
-  input.joystickUp =
+  bool joystickUp =
     input.joystickY >
     JOYSTICK_HIGH_THRESHOLD;
 
-  input.joystickDown =
+  bool joystickDown =
     input.joystickY <
     JOYSTICK_LOW_THRESHOLD;
+
+  // Detect fresh direction events
+  input.joystickLeftPressed =
+    joystickLeft &&
+    !previousInput.joystickLeft;
+
+  input.joystickRightPressed =
+    joystickRight &&
+    !previousInput.joystickRight;
+
+  input.joystickUpPressed =
+    joystickUp &&
+    !previousInput.joystickUp;
+
+  input.joystickDownPressed =
+    joystickDown &&
+    !previousInput.joystickDown;
+
+  // Store current held directions
+  input.joystickLeft =
+    joystickLeft;
+
+  input.joystickRight =
+    joystickRight;
+
+  input.joystickUp =
+    joystickUp;
+
+  input.joystickDown =
+    joystickDown;
+
+  // Save current directions for the next scan
+  previousInput.joystickLeft =
+    joystickLeft;
+
+  previousInput.joystickRight =
+    joystickRight;
+
+  previousInput.joystickUp =
+    joystickUp;
+
+  previousInput.joystickDown =
+    joystickDown;
 }
 
 void consumeAllPressEvents() {
@@ -1248,6 +1383,11 @@ void consumeAllPressEvents() {
   input.selectPressed = false;
 
   input.joystickPressed = false;
+
+  input.joystickLeftPressed = false;
+  input.joystickRightPressed = false;
+  input.joystickUpPressed = false;
+  input.joystickDownPressed = false;
 }
 
 void waitForAllGameInputsReleased() {
@@ -1532,6 +1672,64 @@ void playStartupFretSequence() {
 
   delay(1);
   }
+}
+
+void increaseRgbBrightness() {
+
+  int newBrightness =
+    static_cast<int>(rgbBrightness) +
+    RGB_BRIGHTNESS_STEP;
+
+  if (
+    newBrightness >
+    RGB_BRIGHTNESS_MAX
+  ) {
+    newBrightness =
+      RGB_BRIGHTNESS_MAX;
+  }
+
+  rgbBrightness =
+    static_cast<uint8_t>(
+      newBrightness
+    );
+
+  rgbLeds.setBrightness(
+    rgbBrightness
+  );
+
+  flashAllFrets(
+    LED_COLOR_LAVENDER,
+    80
+  );
+}
+
+void decreaseRgbBrightness() {
+
+  int newBrightness =
+    static_cast<int>(rgbBrightness) -
+    RGB_BRIGHTNESS_STEP;
+
+  if (
+    newBrightness <
+    RGB_BRIGHTNESS_MIN
+  ) {
+    newBrightness =
+      RGB_BRIGHTNESS_MIN;
+  }
+
+  rgbBrightness =
+    static_cast<uint8_t>(
+      newBrightness
+    );
+
+  rgbLeds.setBrightness(
+    rgbBrightness
+  );
+
+  flashAllFrets(
+    LED_COLOR_LAVENDER,
+    80
+  );
 }
 
 void setFretColor(
@@ -1942,6 +2140,194 @@ void animateNewHighscore() {
   );
 }
 
+void animateSelectSettings() {
+
+  const int selectSequence[] = {
+    RGB_SELECT,       // Pixel 13
+    RGB_START,        // Pixel 12
+    RGB_STRUM_DOWN,   // Pixel 11
+    RGB_STRUM_UP      // Pixel 10
+  };
+
+  constexpr int sequenceCount =
+    sizeof(selectSequence) /
+    sizeof(selectSequence[0]);
+
+  const uint8_t baseRed = 190;
+  const uint8_t baseGreen = 140;
+  const uint8_t baseBlue = 255;
+
+  const uint32_t baseColor =
+    rgbLeds.Color(
+      baseRed,
+      baseGreen,
+      baseBlue
+    );
+
+  // Clear only these four pixels first
+  for (
+    int index = 0;
+    index < sequenceCount;
+    index++
+  ) {
+    rgbLeds.setPixelColor(
+      selectSequence[index],
+      LED_COLOR_OFF
+    );
+  }
+
+  rgbLeds.show();
+
+  // Light pixels 13, 12, 11, and 10
+  for (
+    int index = 0;
+    index < sequenceCount;
+    index++
+  ) {
+    rgbLeds.setPixelColor(
+      selectSequence[index],
+      baseColor
+    );
+
+    rgbLeds.show();
+    delay(RGB_STEP_FAST_MS);
+  }
+
+  delay(RGB_HOLD_SHORT_MS);
+
+  // Fade the four pixels together
+  for (
+    int step = RGB_FADE_STEPS;
+    step >= 0;
+    step--
+  ) {
+    uint32_t fadedColor =
+      rgbLeds.Color(
+        baseRed * step / RGB_FADE_STEPS,
+        baseGreen * step / RGB_FADE_STEPS,
+        baseBlue * step / RGB_FADE_STEPS
+      );
+
+    for (
+      int index = 0;
+      index < sequenceCount;
+      index++
+    ) {
+      rgbLeds.setPixelColor(
+        selectSequence[index],
+        fadedColor
+      );
+    }
+
+    rgbLeds.show();
+    delay(RGB_FADE_STEP_MS);
+  }
+
+  // Ensure the four pixels finish completely off
+  for (
+    int index = 0;
+    index < sequenceCount;
+    index++
+  ) {
+    rgbLeds.setPixelColor(
+      selectSequence[index],
+      LED_COLOR_OFF
+    );
+  }
+
+  rgbLeds.show();
+}
+
+void animateRgbTest() {
+
+  clearRgbLeds();
+
+  // Test each physical pixel individually
+  for (
+    int pixel = 0;
+    pixel < RGB_LED_COUNT;
+    pixel++
+  ) {
+    rgbLeds.clear();
+
+    rgbLeds.setPixelColor(
+      pixel,
+      LED_COLOR_LAVENDER
+    );
+
+    rgbLeds.show();
+    delay(120);
+  }
+
+  // Test red channel
+  for (
+    int pixel = 0;
+    pixel < RGB_LED_COUNT;
+    pixel++
+  ) {
+    rgbLeds.setPixelColor(
+      pixel,
+      rgbLeds.Color(255, 0, 0)
+    );
+  }
+
+  rgbLeds.show();
+  delay(250);
+
+  // Test green channel
+  for (
+    int pixel = 0;
+    pixel < RGB_LED_COUNT;
+    pixel++
+  ) {
+    rgbLeds.setPixelColor(
+      pixel,
+      rgbLeds.Color(0, 255, 0)
+    );
+  }
+
+  rgbLeds.show();
+  delay(250);
+
+  // Test blue channel
+  for (
+    int pixel = 0;
+    pixel < RGB_LED_COUNT;
+    pixel++
+  ) {
+    rgbLeds.setPixelColor(
+      pixel,
+      rgbLeds.Color(0, 0, 255)
+    );
+  }
+
+  rgbLeds.show();
+  delay(250);
+
+  // Test normal control colors
+  for (int fret = 0; fret < FRET_COUNT; fret++) {
+    setFretColor(
+      fret,
+      FRET_RGB_COLORS[fret]
+    );
+  }
+
+  setStrumColors(
+    LED_COLOR_TURQUOISE,
+    LED_COLOR_PINK
+  );
+
+  setUtilityColors(
+    LED_COLOR_YELLOW,
+    LED_COLOR_LAVENDER
+  );
+
+  rgbLeds.show();
+  delay(500);
+
+  clearRgbLeds();
+}
+
   // D. SOUND FUNCTIONS //
 
 void playTone(
@@ -1993,9 +2379,9 @@ void playBackSound() {
 
 // Navigate up sound // EDIT
 void playNavUpSound() {
-  playTone(FX_BUZZER, 330, 8);
-  delay(16);
-  playTone(NOTE_BUZZER, 300, 8);
+  playTone(FX_BUZZER, 300, 8);
+  delay(12);
+  playTone(NOTE_BUZZER, 330, 8);
 }
 
 // navigate down sound // EDIT
@@ -2680,6 +3066,209 @@ void drawGameOverScreen(int score) {
 
   // High score
   tft.setTextSize(1);
+}
+
+void drawStateScreen(
+  AppState state
+) {
+  switch (state) {
+
+    case STATE_SPLASH:
+      drawSplashScreen();
+      break;
+
+    case STATE_MAIN_MENU:
+      drawMainMenu();
+      break;
+
+    case STATE_SPEEDTEST_MENU:
+      if (speedLeaderboardOpen) {
+        drawSpeedLeaderboard();
+      } else {
+        drawSpeedtestMenu();
+      }
+      break;
+
+    case STATE_SIMON_MENU:
+      if (simonLeaderboardOpen) {
+        drawSimonLeaderboard();
+      } else {
+        drawSimonMenu();
+      }
+      break;
+
+    case STATE_REACTION_MENU:
+      if (reactionLeaderboardOpen) {
+        drawReactionLeaderboard();
+      } else {
+        drawReactionMenu();
+      }
+      break;
+
+    case STATE_SOLO_MENU:
+      drawSoloMenu();
+      break;
+
+    case STATE_SETTINGS_MENU:
+      drawSettingsMenu();
+      break;
+
+    case STATE_GAMEOVER:
+      drawGameOverScreen(
+        lastScore
+      );
+      break;
+
+    case STATE_ENTER_INITIALS:
+      drawInitialsEntry();
+      break;
+
+    case STATE_PLAYING:
+      // Each game draws its own playing screen.
+      break;
+  }
+}
+
+void drawSettingsMenu() {
+
+  tft.fillScreen(COLOR_BG);
+
+  // ----- TITLE ----- //
+
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_LAVENDER);
+
+  int16_t x1;
+  int16_t y1;
+  uint16_t width;
+  uint16_t height;
+
+  tft.getTextBounds(
+    "settings",
+    0,
+    0,
+    &x1,
+    &y1,
+    &width,
+    &height
+  );
+
+  tft.setCursor(
+    (SCREEN_WIDTH - width) / 2,
+    2
+  );
+
+  tft.print("settings");
+
+  // ----- MENU ROWS ----- //
+
+  int firstVisible =
+    getFirstVisibleItem(
+      settingsIndex,
+      SETTINGS_COUNT,
+      VISIBLE_MENU_ROWS
+    );
+
+  for (
+    int row = 0;
+    row < VISIBLE_MENU_ROWS;
+    row++
+  ) {
+    int optionIndex =
+      firstVisible + row;
+
+    if (
+      optionIndex >= SETTINGS_COUNT
+    ) {
+      break;
+    }
+
+    int y =
+      20 + row * 15;
+
+    bool selected =
+      optionIndex == settingsIndex;
+
+    if (selected) {
+      tft.setTextSize(2);
+      tft.setTextColor(COLOR_SELECT);
+      tft.setCursor(0, y);
+      tft.print(">");
+
+    } else {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_TEXT);
+      tft.setCursor(8, y);
+    }
+
+    tft.print(
+      settingsOptions[optionIndex]
+    );
+
+    // ----- CURRENT SETTING VALUES ----- //
+
+    if (optionIndex == 0) {
+
+      int brightnessPercent =
+        static_cast<int>(
+          rgbBrightness
+        ) * 100 / 255;
+
+      tft.setCursor(
+        selected ? 125 : 130,
+        y
+      );
+
+      tft.print(
+        brightnessPercent
+      );
+
+      tft.print("%");
+
+    } else if (optionIndex == 1) {
+
+      tft.setCursor(
+        selected ? 125 : 136,
+        y
+      );
+
+      tft.print(
+        soundEnabled
+          ? "ON"
+          : "OFF"
+      );
+
+    } else if (optionIndex == 2) {
+
+      unsigned long seconds =
+        soloTimeoutMs / 1000;
+
+      tft.setCursor(
+        selected ? 125 : 136,
+        y
+      );
+
+      tft.print(seconds);
+      tft.print("s");
+    }
+  }
+
+  // Back symbol
+  tft.drawLine(
+    152,
+    71,
+    158,
+    77,
+    COLOR_BACK
+  );
+
+  tft.drawLine(
+    157,
+    72,
+    151,
+    78,
+    COLOR_BACK
+  );
 }
 
   // H. MENU SCREENS //
@@ -3483,7 +4072,7 @@ void startReactionCue(int targetFret) {
     if (reactionIndex == 0) {
       playTone(
         NOTE_BUZZER,
-        575,
+        GAME_STRUM_NOTE,
         120
       );
 
@@ -3748,23 +4337,41 @@ void updateMainMenu() {
   }
 
   if (greenPressed()) {
+
     playSelectSound();
-    animateGreenSelect();
+
+    AppState destination =
+      STATE_SPEEDTEST_MENU;
     
     switch (mainMenuIndex) {
+
       case 0:
-        currentState = STATE_SPEEDTEST_MENU;
+        destination =
+          STATE_SPEEDTEST_MENU;
         break;
+
       case 1:
-        currentState = STATE_SIMON_MENU;
+        destination =
+          STATE_SIMON_MENU;
         break;
+
       case 2:
-        currentState = STATE_REACTION_MENU;
+        destination =
+          STATE_REACTION_MENU;
         break;
+
       case 3:
-        currentState = STATE_SOLO_MENU;
+        destination =
+          STATE_SOLO_MENU;
         break;
     }
+
+    consumeAllPressEvents();
+
+    showStateImmediately(
+      destination
+    );
+    animateGreenSelect();
   }
 }
 
@@ -3815,16 +4422,27 @@ void updateSpeedtestMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    consumeAllPressEvents();
+
+    showStateImmediately(
+      STATE_MAIN_MENU
+    );
+
     animateRedBack();
-    
-    currentState = STATE_MAIN_MENU;
   }
 
   // Show speedtest leaderboard
   if (yellowPressed()) {
+
     playSelectSound(); // tähän voi tehdä oman äänen EDIT
-    animateYellowHighscores();
     speedLeaderboardOpen = true;
+    
+    showStateImmediately(
+      STATE_SPEEDTEST_MENU
+    );
+
+    animateYellowHighscores();
+    
     drawSpeedLeaderboard();
     return;
   }
@@ -3918,17 +4536,27 @@ void updateSimonMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    consumeAllPressEvents();
+
+    showStateImmediately(
+      STATE_MAIN_MENU
+    );
+
     animateRedBack();
-    currentState = STATE_MAIN_MENU;
   }
 
   // Show SimonSays leaderboard
   if (yellowPressed()) {
+
     playSelectSound(); // tähän voi tehdä oman äänen EDIT
-    animateYellowHighscores();
-    
     simonLeaderboardOpen = true;
-    drawSimonLeaderboard();
+
+    showStateImmediately(
+      STATE_SIMON_MENU
+    );
+
+    animateYellowHighscores();
+
     return;
   }
 
@@ -4021,9 +4649,13 @@ void updateReactionMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    consumeAllPressEvents();
+
+    showStateImmediately(
+      STATE_MAIN_MENU
+    );
+
     animateRedBack();
-    
-    currentState = STATE_MAIN_MENU;
   }
 
   // Show Reaction leaderboard
@@ -4082,8 +4714,13 @@ void updateSoloMenu() {
   // Back to main menu
   if (redPressed()) {
     playBackSound();
+    consumeAllPressEvents();
+
+    showStateImmediately(
+      STATE_MAIN_MENU
+    );
+
     animateRedBack();
-    currentState = STATE_MAIN_MENU;
   }
 
   // Navigate through Solo difficulties
@@ -4104,6 +4741,203 @@ void updateSoloMenu() {
     }
       playTone(FX_BUZZER, MENU_SCALE_3[soloIndex], 32);
     drawSoloMenu();
+  }
+}
+
+void updateSettingsMenu() {
+
+  // Move down through settings
+  if (strumUpPressed()) {
+
+    settingsIndex++;
+
+    if (
+      settingsIndex >= SETTINGS_COUNT
+    ) {
+      settingsIndex = 0;
+    }
+
+    playNavUpSound();
+    drawSettingsMenu();
+  }
+
+  // Move up through settings
+  if (strumDownPressed()) {
+
+    settingsIndex--;
+
+    if (settingsIndex < 0) {
+      settingsIndex =
+        SETTINGS_COUNT - 1;
+    }
+
+    playNavDownSound();
+    drawSettingsMenu();
+  }
+
+  // ----- HORIZONTAL ADJUSTMENT ----- //
+
+  if (settingsIndex == 0) {
+
+    if (input.joystickRightPressed) {
+      input.joystickRightPressed = false;
+
+      increaseRgbBrightness();
+      drawSettingsMenu();
+    }
+
+    if (input.joystickLeftPressed) {
+      input.joystickLeftPressed = false;
+
+      decreaseRgbBrightness();
+      drawSettingsMenu();
+    }
+  }
+
+  if (settingsIndex == 2) {
+
+    if (input.joystickRightPressed) {
+      input.joystickRightPressed = false;
+
+      if (
+        soloTimeoutMs <
+        SOLO_TIMEOUT_MAX_MS
+      ) {
+        soloTimeoutMs +=
+          SOLO_TIMEOUT_STEP_MS;
+      }
+
+      playInitialsClickUp();
+      drawSettingsMenu();
+    }
+
+    if (input.joystickLeftPressed) {
+      input.joystickLeftPressed = false;
+
+      if (
+        soloTimeoutMs >
+        SOLO_TIMEOUT_MIN_MS
+      ) {
+        soloTimeoutMs -=
+          SOLO_TIMEOUT_STEP_MS;
+      }
+
+      playInitialsClickDown();
+      drawSettingsMenu();
+    }
+  }
+
+  // Activate selected setting
+  bool activateSetting = false;
+
+  if (greenPressed()) {
+    activateSetting = true;
+  }
+
+  if (startPressed()) {
+    activateSetting = true;
+  }
+
+  if (activateSetting) {
+    switch (settingsIndex) {
+
+      case 0:
+        // Brightness will be implemented next.
+        increaseRgbBrightness();
+
+        if (
+          rgbBrightness >
+          RGB_BRIGHTNESS_MAX -
+            RGB_BRIGHTNESS_STEP
+        ) {
+          rgbBrightness =
+            RGB_BRIGHTNESS_MIN;
+
+        } else {
+          rgbBrightness +=
+            RGB_BRIGHTNESS_STEP;
+        }
+
+        rgbLeds.setBrightness(
+          rgbBrightness
+        );
+
+        flashAllFrets(
+          LED_COLOR_LAVENDER,
+          80
+        );
+        drawSettingsMenu();
+        break;
+
+      case 1:
+        soundEnabled =
+          !soundEnabled;
+
+        if (soundEnabled) {
+          playSelectSound();
+        }
+
+        drawSettingsMenu();
+        break;
+
+      case 2:
+        soloTimeoutMs +=
+          SOLO_TIMEOUT_STEP_MS;
+
+        if (
+          soloTimeoutMs >
+          SOLO_TIMEOUT_MAX_MS
+        ) {
+          soloTimeoutMs =
+            SOLO_TIMEOUT_MIN_MS;
+        }
+
+        drawSettingsMenu();
+        break;
+
+      case 3:
+        playSelectSound();
+        animateRgbTest();
+        drawSettingsMenu();
+        break;
+
+      case 4:
+        consumeAllPressEvents();
+
+        showStateImmediately(
+          STATE_MAIN_MENU
+        );
+
+        playBackSound();
+        animateRedBack();
+        break;
+    }
+  }
+
+  // Back using Red or Select
+  bool leaveSettings = false;
+
+  if (redPressed()) {
+    leaveSettings = true;
+  }
+
+  if (selectPressed()) {
+    leaveSettings = true;
+  }
+
+  if (leaveSettings) {
+    playBackSound();
+    consumeAllPressEvents();
+
+    consumeAllPressEvents;
+
+    showStateImmediately(
+      STATE_MAIN_MENU
+    );
+
+    animateRedBack();
+
+    return;
   }
 }
 
@@ -4180,16 +5014,16 @@ void runSpeedtestGame() {
 
           playTone(
             NOTE_BUZZER,
-            250 + nextInput * 100,
-            50
+            GAME_SCALE[nextInput],
+            RGB_HOLD_SHORT_MS
           );
 
         } else {
 
           playTone(
             NOTE_BUZZER,
-            1000,
-            50
+            GAME_STRUM_NOTE,
+            RGB_HOLD_SHORT_MS
           );
         }
       }
@@ -4501,7 +5335,7 @@ void runSimonsaysGame() {
         if (useSound) {
           playTone(
             NOTE_BUZZER,
-            250 + targetInput * 100,
+            GAME_SCALE[targetInput],
             250
           );
         }
@@ -4530,9 +5364,15 @@ void runSimonsaysGame() {
         }
 
         if (useSound) {
+
+          unsigned int frequency = 
+            targetInput < FRET_COUNT
+              ? GAME_SCALE[targetInput]
+              : GAME_STRUM_NOTE;
+
           playTone(
             NOTE_BUZZER,
-            1000,
+            frequency,
             250
           );
         }
@@ -4604,7 +5444,7 @@ void runSimonsaysGame() {
           if (useSound) {
             playTone(
               NOTE_BUZZER,
-              250 + fret * 100,
+              GAME_SCALE[fret],
               RGB_HOLD_SHORT_MS
             );
           }
@@ -4652,7 +5492,7 @@ void runSimonsaysGame() {
           if (useSound) {
             playTone(
               NOTE_BUZZER,
-              1000,
+              GAME_STRUM_NOTE,
               RGB_HOLD_SHORT_MS
             );
           }
@@ -5091,8 +5931,16 @@ void runReactionGame() {
     newHighScore &&
     pendingInitials != nullptr
   ) {
+
+    reactionLeaderboardOpen = true;
+
+    showStateImmediately(
+      STATE_REACTION_MENU
+    );
+
     playVictorySound();
     animateYellowHighscores();
+
     animateNewHighscore();
 
     startInitialsEntry();
@@ -5303,8 +6151,8 @@ void runSoloGame() {
       digitalRead(BUTTON_PINS[4]) == LOW &&
       digitalRead(STRUM_UP_PIN) == LOW
     ) {
-      animateRedBack();
       playBackSound();
+      animateRedBack();
 
       clearRgbLeds();
 
@@ -5316,10 +6164,10 @@ void runSoloGame() {
 
     if (
       !anyFretHeld &&
-      millis() - lastActivity > 5000
+      millis() - lastActivity > soloTimeoutMs
     ) {
-      animateRedBack();
       playBackSound();
+      animateRedBack();
 
       clearRgbLeds();
 
@@ -5371,9 +6219,12 @@ void setup() {
   // Joystick center button
   pinMode(JOYSTICK_BUTTON_PIN, INPUT_PULLUP);
 
+  // Capture initial button and joystick states
+  initializeInputs();
+
   // Fret LEDs
   rgbLeds.begin();
-  rgbLeds.setBrightness(RGB_BRIGHTNESS);
+  rgbLeds.setBrightness(rgbBrightness);
   clearRgbLeds();
 
   // Buzzers
@@ -5459,58 +6310,12 @@ void loop() {
 
   if (currentState != previousState) {
 
-    switch (currentState) {
+    drawStateScreen(
+      currentState
+    );
 
-      case STATE_SPLASH:
-        drawSplashScreen();
-        break;
-
-      case STATE_MAIN_MENU:
-        drawMainMenu();
-        break;
-
-      case STATE_SPEEDTEST_MENU:
-        if (speedLeaderboardOpen) {
-          drawSpeedLeaderboard();
-        } else {
-          drawSpeedtestMenu();
-        }
-        break;
-
-      case STATE_SIMON_MENU:
-        if (simonLeaderboardOpen) {
-          drawSimonLeaderboard();
-        } else {
-          drawSimonMenu();
-        }
-        break;
-
-      case STATE_REACTION_MENU:
-        if (reactionLeaderboardOpen) {
-          drawReactionLeaderboard();
-        } else {
-          drawReactionMenu();
-        }
-        break;
-
-      case STATE_SOLO_MENU:
-        drawSoloMenu();
-        break;
-
-      case STATE_PLAYING:
-        // Game functions draw their own screens.
-        break;
-
-      case STATE_GAMEOVER:
-        drawGameOverScreen(lastScore);
-        break;
-
-      case STATE_ENTER_INITIALS:
-        drawInitialsEntry();
-        break;
-    }
-
-    previousState = currentState;
+    previousState =
+      currentState;
   }
 
   // ----- LIVE RGB INPUT FEEDBACK ----- //
@@ -5522,6 +6327,7 @@ void loop() {
     currentState == STATE_SIMON_MENU ||
     currentState == STATE_REACTION_MENU ||
     currentState == STATE_SOLO_MENU ||
+    currentState == STATE_SETTINGS_MENU ||
     currentState == STATE_ENTER_INITIALS
   ) {
     updateMenuLEDs();
@@ -5549,13 +6355,18 @@ void loop() {
 
       if (anyInputPressed) {
 
+        playSelectSound();
+
         // Consume all press events so the same input
         consumeAllPressEvents();
 
-        playSelectSound();
-        animateSplashExit();
+        // Change state first
+        showStateImmediately(
+          STATE_MAIN_MENU
+        );
 
-        currentState = STATE_MAIN_MENU;
+        // RGB animation run while the menu is visible
+        animateSplashExit();
       }
 
       break;
@@ -5563,16 +6374,42 @@ void loop() {
 
     case STATE_MAIN_MENU: {
 
+      if (selectPressed()) {
+
+        playSelectSound();
+
+        consumeAllPressEvents();
+
+        settingsIndex = 0;
+
+        // Draw Settings immediately
+        showStateImmediately(
+          STATE_SETTINGS_MENU
+        );
+        animateSelectSettings();
+
+        break;
+      }
+
       updateMainMenu();
 
       if (redPressed()) {
         playBackSound();
-        animateRedBack();
-        clearRgbLeds();
 
-        currentState = STATE_SPLASH;
+        consumeAllPressEvents();
+
+        showStateImmediately(
+          STATE_SPLASH
+        );
+
+        animateRedBack();
       }
 
+      break;
+    }
+
+    case STATE_SETTINGS_MENU: {
+      updateSettingsMenu();
       break;
     }
 
