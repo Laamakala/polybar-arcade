@@ -49,7 +49,7 @@ constexpr int VISIBLE_MENU_ROWS = 4;
 constexpr unsigned long MENU_COOLDOWN = 50;
 
 // Settings menu-count constants:
-constexpr int SETTINGS_COUNT = 5;
+constexpr int SETTINGS_COUNT = 4;
 
 constexpr uint8_t RGB_BRIGHTNESS_DEFAULT = 192;
 constexpr uint8_t RGB_BRIGHTNESS_MIN = 16;
@@ -278,7 +278,7 @@ const uint8_t FRET_RGB_BLUE[FRET_COUNT] = {
 // ----- 6. MUSIC NOTE FREQUENCIES ----- //
 
 // Notes for solo game, minor
-const int SOLO_MINOR[6][5] = {
+const int SOLO_MINOR[5][5] = {
 
   // Root 0
   { 98, 117, 123, 147, 165 },    // G2 Bb2 B2 D3 E3
@@ -293,10 +293,7 @@ const int SOLO_MINOR[6][5] = {
   { 440, 523, 554, 659, 784 },   // A4 C5 C#5 E5 G5
 
   // Root 4
-  { 698, 831, 880, 1047, 1245 }, // F5 Ab5 A5 C6 Eb6
-
-  // Root 5
-  { 1175, 1397, 1480, 1760, 2093 } // D6 F6 F#6 A6 C7
+  { 698, 831, 880, 1047, 1245 }  // F5 Ab5 A5 C6 Eb6
 };
 
 // Notes for solo game, major
@@ -591,9 +588,8 @@ const char* soloOptions[SOLO_COUNT] = {
 
 // settings menu options
 const char* settingsOptions[SETTINGS_COUNT] = {
+  "Volume",
   "RGB lvl",
-  "sound",
-  "solo t/o",
   "RGB test",
   "back"
 };
@@ -611,9 +607,18 @@ GameType currentGame = GAME_SPEEDTEST;
 
   // ----- USER AND GAME SETTINGS ----- //
 
-bool soundEnabled = true;
 bool useLight = true;
-bool useSound = true;
+constexpr uint8_t VOLUME_LEVELS[] = {
+  0, 25, 50, 75, 100
+};
+uint8_t volumeIndex = 4; // 100%
+bool soundOn() {
+  return VOLUME_LEVELS[volumeIndex] > 0;
+}
+bool soundMuted() {
+  return VOLUME_LEVELS[volumeIndex] == 0;
+}
+
 uint8_t rgbBrightness =
   RGB_BRIGHTNESS_DEFAULT;
 
@@ -1539,7 +1544,7 @@ void playStartupFretSequence() {
       digitalRead(BUTTON_PINS[0]) == LOW &&
       digitalRead(BUTTON_PINS[4]) == LOW  
     ) { 
-      soundEnabled = false;
+      volumeIndex = 0;
       
       noTone(NOTE_BUZZER);
       noTone(FX_BUZZER);
@@ -2242,7 +2247,7 @@ void animateRgbTest() {
 
   clearRgbLeds();
 
-  // Test each physical pixel individually
+  // Test each physical pixel individually lavender
   for (
     int pixel = 0;
     pixel < RGB_LED_COUNT;
@@ -2325,6 +2330,23 @@ void animateRgbTest() {
   rgbLeds.show();
   delay(500);
 
+  // Test each physical pixel individually cyan
+  for (
+    int pixel = 14;
+    pixel > 0;
+    pixel--
+  ) {
+    rgbLeds.clear();
+
+    rgbLeds.setPixelColor(
+      pixel,
+      LED_COLOR_TURQUOISE
+    );
+
+    rgbLeds.show();
+    delay(120);
+  }
+
   clearRgbLeds();
 }
 
@@ -2335,7 +2357,7 @@ void playTone(
   unsigned int frequency,
   unsigned long duration
 ) {
-  if (!soundEnabled) {
+  if (soundMuted()) {
     return;
   }
 
@@ -2351,14 +2373,8 @@ void playGameTone(
   unsigned int frequency,
   unsigned long duration
 ) {
-  if (
-    !soundEnabled ||
-    !useSound
-  ) {
-    return;
-  }
 
-  tone(
+  playTone(
     buzzerPin,
     frequency,
     duration
@@ -3209,6 +3225,16 @@ void drawSettingsMenu() {
 
     if (optionIndex == 0) {
 
+      tft.setCursor(
+        selected ? 125 : 136,
+        y
+      );
+
+      tft.print(VOLUME_LEVELS[volumeIndex]);
+      tft.print("%");
+
+    } else if (optionIndex == 1) {
+
       int brightnessPercent =
         static_cast<int>(
           rgbBrightness
@@ -3222,34 +3248,8 @@ void drawSettingsMenu() {
       tft.print(
         brightnessPercent
       );
-
       tft.print("%");
 
-    } else if (optionIndex == 1) {
-
-      tft.setCursor(
-        selected ? 125 : 136,
-        y
-      );
-
-      tft.print(
-        soundEnabled
-          ? "ON"
-          : "OFF"
-      );
-
-    } else if (optionIndex == 2) {
-
-      unsigned long seconds =
-        soloTimeoutMs / 1000;
-
-      tft.setCursor(
-        selected ? 125 : 136,
-        y
-      );
-
-      tft.print(seconds);
-      tft.print("s");
     }
   }
 
@@ -4068,7 +4068,7 @@ void startReactionCue(int targetFret) {
   }
 
   // Audio cue
-  if (useSound) {
+  if (soundOn()) {
     if (reactionIndex == 0) {
       playTone(
         NOTE_BUZZER,
@@ -4265,7 +4265,6 @@ void cleanupNotes() {
 void drawSoloRoot() {
 
     tft.fillRect(120, 0, 40, 16, COLOR_BG);
-
     tft.setTextSize(2);
     tft.setTextColor(COLOR_SOLO);
 
@@ -4274,27 +4273,7 @@ void drawSoloRoot() {
 }
 
 void drawSoloPlayingScreen() {
-
   tft.fillScreen(COLOR_BG);
-  tft.setTextColor(COLOR_SOLO);
-  tft.setTextSize(2);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds(
-    "solo",
-    0, 0,
-    &x1, &y1,
-    &w, &h
-  );
-
-  tft.setCursor(
-    (SCREEN_WIDTH - w) / 3,
-    2
-  );
-
-  tft.print("solo");
   drawSoloRoot();
 }
 
@@ -4414,7 +4393,6 @@ void updateSpeedtestMenu() {
       min(numInputs, FRET_COUNT)
     );
     useLight = true;
-    useSound = true;
     currentGame = GAME_SPEEDTEST;
     runSpeedtestGame();
   }
@@ -4459,7 +4437,6 @@ void updateSpeedtestMenu() {
     );
 
     useLight = false;
-    useSound = true;
 
     currentGame = GAME_SPEEDTEST;
     runSpeedtestGame();
@@ -4528,7 +4505,6 @@ void updateSimonMenu() {
       min(numInputs, FRET_COUNT)
     );
     useLight = true;
-    useSound = true;
     currentGame = GAME_SIMON;
     runSimonsaysGame();
   }
@@ -4571,7 +4547,6 @@ void updateSimonMenu() {
     );
 
     useLight = false;
-    useSound = true;
 
     currentGame = GAME_SIMON;
     runSimonsaysGame();
@@ -4641,7 +4616,6 @@ void updateReactionMenu() {
     animateGameStart(FRET_COUNT);
     
     useLight = true;
-    useSound = true;
     currentGame = GAME_REACTION;
     runReactionGame();
   }
@@ -4678,7 +4652,6 @@ void updateReactionMenu() {
     );
     
     useLight = false;
-    useSound = true;
     currentGame = GAME_REACTION;
     runReactionGame();
   }
@@ -4777,7 +4750,38 @@ void updateSettingsMenu() {
 
   // ----- HORIZONTAL ADJUSTMENT ----- //
 
-  if (settingsIndex == 0) {
+  // Activate selected setting
+  bool activateSetting = false;
+
+  if (greenPressed()) {
+      activateSetting = true;
+  }
+
+  if (startPressed()) {
+      activateSetting = true;
+  }
+
+  if (orangePressed()) {
+
+    if (settingsIndex == 0) {
+
+      if (volumeIndex > 0) {
+        volumeIndex--;
+      }
+
+      if (volumeIndex > 0) {
+        playTone(
+          NOTE_BUZZER,
+          SOLO_BLUES[2][volumeIndex - 1],
+          100
+        );
+      }
+
+      drawSettingsMenu();
+    }
+  }
+
+  if (settingsIndex == 1) {
 
     if (input.joystickRightPressed) {
       input.joystickRightPressed = false;
@@ -4794,54 +4798,29 @@ void updateSettingsMenu() {
     }
   }
 
-  if (settingsIndex == 2) {
-
-    if (input.joystickRightPressed) {
-      input.joystickRightPressed = false;
-
-      if (
-        soloTimeoutMs <
-        SOLO_TIMEOUT_MAX_MS
-      ) {
-        soloTimeoutMs +=
-          SOLO_TIMEOUT_STEP_MS;
-      }
-
-      playInitialsClickUp();
-      drawSettingsMenu();
-    }
-
-    if (input.joystickLeftPressed) {
-      input.joystickLeftPressed = false;
-
-      if (
-        soloTimeoutMs >
-        SOLO_TIMEOUT_MIN_MS
-      ) {
-        soloTimeoutMs -=
-          SOLO_TIMEOUT_STEP_MS;
-      }
-
-      playInitialsClickDown();
-      drawSettingsMenu();
-    }
-  }
-
-  // Activate selected setting
-  bool activateSetting = false;
-
-  if (greenPressed()) {
-    activateSetting = true;
-  }
-
-  if (startPressed()) {
-    activateSetting = true;
-  }
-
   if (activateSetting) {
     switch (settingsIndex) {
 
       case 0:
+        
+        volumeIndex++;
+
+        if (volumeIndex >= 5) {
+          volumeIndex = 0;
+        }
+
+        if (volumeIndex > 0) {
+          playTone(
+            NOTE_BUZZER,
+            SOLO_BLUES[2][volumeIndex - 1],
+            100
+          );
+        }
+
+        drawSettingsMenu();
+        break;
+
+      case 1:
         // Brightness will be implemented next.
         increaseRgbBrightness();
 
@@ -4869,39 +4848,13 @@ void updateSettingsMenu() {
         drawSettingsMenu();
         break;
 
-      case 1:
-        soundEnabled =
-          !soundEnabled;
-
-        if (soundEnabled) {
-          playSelectSound();
-        }
-
-        drawSettingsMenu();
-        break;
-
       case 2:
-        soloTimeoutMs +=
-          SOLO_TIMEOUT_STEP_MS;
-
-        if (
-          soloTimeoutMs >
-          SOLO_TIMEOUT_MAX_MS
-        ) {
-          soloTimeoutMs =
-            SOLO_TIMEOUT_MIN_MS;
-        }
-
-        drawSettingsMenu();
-        break;
-
-      case 3:
         playSelectSound();
         animateRgbTest();
         drawSettingsMenu();
         break;
 
-      case 4:
+      case 3:
         consumeAllPressEvents();
 
         showStateImmediately(
@@ -4928,8 +4881,6 @@ void updateSettingsMenu() {
   if (leaveSettings) {
     playBackSound();
     consumeAllPressEvents();
-
-    consumeAllPressEvents;
 
     showStateImmediately(
       STATE_MAIN_MENU
@@ -5008,7 +4959,7 @@ void runSpeedtestGame() {
 
       // ----- TARGET SOUND ----- //
 
-      if (useSound) {
+      if (soundOn()) {
 
         if (nextInput < FRET_COUNT) {
 
@@ -5332,7 +5283,7 @@ void runSimonsaysGame() {
           rgbLeds.show();
         }
 
-        if (useSound) {
+        if (soundOn()) {
           playTone(
             NOTE_BUZZER,
             GAME_SCALE[targetInput],
@@ -5363,7 +5314,7 @@ void runSimonsaysGame() {
           rgbLeds.show();
         }
 
-        if (useSound) {
+        if (soundOn()) {
 
           unsigned int frequency = 
             targetInput < FRET_COUNT
@@ -5441,7 +5392,7 @@ void runSimonsaysGame() {
 
           pressedInput = fret;
 
-          if (useSound) {
+          if (soundOn()) {
             playTone(
               NOTE_BUZZER,
               GAME_SCALE[fret],
@@ -5489,7 +5440,7 @@ void runSimonsaysGame() {
           input.strumUpPressed = false;
           input.strumDownPressed = false;
 
-          if (useSound) {
+          if (soundOn()) {
             playTone(
               NOTE_BUZZER,
               GAME_STRUM_NOTE,
@@ -5965,49 +5916,15 @@ void runSoloGame() {
 
   // Draw black screen + scale tone + game title for playing screen
   drawSoloPlayingScreen();
-  drawSoloRoot();
-
-  tft.setTextColor(COLOR_SOLO);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-
-  tft.getTextBounds(
-      "solo",
-      0, 0,
-      &x1, &y1,
-      &w, &h
-  );
-
-  // Title
-  tft.setCursor((SCREEN_WIDTH - w) / 3, 2);
-  tft.print("solo");
+//  drawSoloRoot();
 
   unsigned long lastActivity = millis();
 
-  while (
-    digitalRead(BUTTON_PINS[0]) == LOW ||
-    digitalRead(BUTTON_PINS[1]) == LOW ||
-    digitalRead(BUTTON_PINS[2]) == LOW ||
-    digitalRead(BUTTON_PINS[3]) == LOW ||
-    digitalRead(BUTTON_PINS[4]) == LOW ||
-    digitalRead(STRUM_UP_PIN) == LOW ||
-    digitalRead(STRUM_DOWN_PIN) == LOW
-  ) {
-    delay(1);
-  }
-
   clearRgbLeds();
 
-  // Track previous fret states for press-edge detection
-  bool previousFretState[FRET_COUNT];
-
-  for (int fret = 0; fret < FRET_COUNT; fret++) {
-    previousFretState[fret] =
-      digitalRead(BUTTON_PINS[fret]);
-  }
-
   while (true) {
+
+    updateInputs();
 
     bool anyFretHeld = false;
     bool rgbChanged = false;
@@ -6016,15 +5933,11 @@ void runSoloGame() {
 
     for (int fret = 0; fret < FRET_COUNT; fret++) {
 
-      bool currentFretState =
-        digitalRead(BUTTON_PINS[fret]);
-
       bool fretHeld =
-        currentFretState == LOW;
+      input.fretHeld[fret];
 
       bool fretJustPressed =
-        currentFretState == LOW &&
-        previousFretState[fret] == HIGH;
+        input.fretPressed[fret];
 
       anyFretHeld |= fretHeld;
 
@@ -6052,16 +5965,13 @@ void runSoloGame() {
         int note;
 
         if (soloIndex == 0) {
-          note =
-            SOLO_MINOR[soloRoot][fret];
+          note = SOLO_MINOR[soloRoot][fret];
 
         } else if (soloIndex == 1) {
-          note =
-            SOLO_MAJOR[soloRoot][fret];
+          note = SOLO_MAJOR[soloRoot][fret];
 
         } else {
-          note =
-            SOLO_BLUES[soloRoot][fret];
+          note = SOLO_BLUES[soloRoot][fret];
         }
 
         playTone(
@@ -6073,8 +5983,6 @@ void runSoloGame() {
         spawnNote(fret);
       }
 
-      previousFretState[fret] =
-        currentFretState;
     }
 
     // Send all fret RGB changes together
@@ -6147,9 +6055,9 @@ void runSoloGame() {
     // ----- MANUAL EXIT COMBINATION ----- //
 
     if (
-      digitalRead(BUTTON_PINS[1]) == LOW &&
-      digitalRead(BUTTON_PINS[4]) == LOW &&
-      digitalRead(STRUM_UP_PIN) == LOW
+      input.fretHeld[1] &&
+      input.fretHeld[4] &&
+      input.strumUpPressed
     ) {
       playBackSound();
       animateRedBack();
@@ -6266,7 +6174,6 @@ void setup() {
     digitalRead(BUTTON_PINS[1]) == LOW &&
     digitalRead(BUTTON_PINS[3]) == LOW  
   ) { 
-    soundEnabled = false;
   
     noTone(NOTE_BUZZER);
     noTone(FX_BUZZER);
