@@ -51,7 +51,7 @@ constexpr unsigned long MENU_COOLDOWN = 50;
 // Settings menu-count constants:
 constexpr int SETTINGS_COUNT = 4;
 
-constexpr uint8_t RGB_BRIGHTNESS_DEFAULT = 192;
+constexpr uint8_t RGB_BRIGHTNESS_DEFAULT = 128;
 constexpr uint8_t RGB_BRIGHTNESS_MIN = 16;
 constexpr uint8_t RGB_BRIGHTNESS_MAX = 255;
 constexpr uint8_t RGB_BRIGHTNESS_STEP = 16;
@@ -777,11 +777,6 @@ void fadeAllFrets(
 void flashAllFrets(
   uint32_t color,
   unsigned long durationMs
-);
-
-void setUtilityColors(
-  uint32_t startColor,
-  uint32_t selectColor
 );
 
 void clearRgbLeds();
@@ -6192,7 +6187,7 @@ void setup() {
     resetHighScores();
   }
 
-  // Optional HighScore Reset Combination red+yellow+orange
+  // Optional HighScore Reset Combination green+yellow+orange
   if (
     digitalRead(BUTTON_PINS[0]) == LOW &&
     digitalRead(BUTTON_PINS[2]) == LOW &&
