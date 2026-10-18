@@ -56,17 +56,13 @@ constexpr uint8_t RGB_BRIGHTNESS_MIN = 16;
 constexpr uint8_t RGB_BRIGHTNESS_MAX = 255;
 constexpr uint8_t RGB_BRIGHTNESS_STEP = 16;
 
-constexpr unsigned long SOLO_TIMEOUT_MIN_MS = 2000;
-constexpr unsigned long SOLO_TIMEOUT_MAX_MS = 20000;
-constexpr unsigned long SOLO_TIMEOUT_STEP_MS = 2000;
-
 // Animation speed constants
 constexpr int RGB_STEP_FAST_MS = 40;
 constexpr int RGB_STEP_NORMAL_MS = 70;
 constexpr int RGB_STEP_SLOW_MS = 140;
 constexpr int RGB_HOLD_SHORT_MS = 75;
-constexpr int RGB_FADE_STEP_MS = 50;
-constexpr int RGB_FADE_STEPS = 15;
+constexpr int RGB_FADE_STEP_MS = 40;
+constexpr int RGB_FADE_STEPS = 12;
 
 // ----- 3. PIN DEFINITIONS ----- //
 
@@ -180,6 +176,7 @@ const uint16_t COLOR_SALMON_PINK = 0xFE19;
 const uint16_t COLOR_PASTEL_YELLOW = tft.color565(255, 240, 150);
 const uint16_t COLOR_LAVENDER = tft.color565(190, 140, 255);
 const uint16_t COLOR_CREAM_YELLOW = tft.color565(255, 245, 180);
+const uint16_t COLOR_NOLIGHT_HS = tft.color565(255, 165, 0);
 
 // Boot
 const uint16_t COLOR_BG      = ILI9341_BLACK;               // background color     // Black
@@ -612,17 +609,11 @@ constexpr uint8_t VOLUME_LEVELS[] = {
   0, 25, 50, 75, 100
 };
 uint8_t volumeIndex = 4; // 100%
-bool soundOn() {
-  return VOLUME_LEVELS[volumeIndex] > 0;
-}
-bool soundMuted() {
-  return VOLUME_LEVELS[volumeIndex] == 0;
-}
 
 uint8_t rgbBrightness =
   RGB_BRIGHTNESS_DEFAULT;
 
-unsigned long soloTimeoutMs =
+constexpr unsigned long SOLO_IDLE_TIMEOUT_MS  =
   5000;
 
   // ----- MENU INDEXES ----- //
@@ -636,10 +627,8 @@ int settingsIndex = 0;
 
 
   // ----- LEADERBOARD SCREEN STATE ----- //
-
-bool speedLeaderboardOpen = false;
-bool simonLeaderboardOpen = false;
-bool reactionLeaderboardOpen = false;
+bool leaderboardOpen = false;
+bool showNoLightLeaderboard = false;
 
   // ----- GAME RUNTIME VARIABLES ----- //
 
@@ -711,15 +700,6 @@ bool scoreStorageReady = false;
   // ----- INPUT EDGE STATE ----- //
 
 unsigned long lastMenuInput = 0;
-
-  /*/ Music notes for different frets
-const char* symbols[5] = {
-    "♪",
-    "♫",
-    "♩",
-    "♬",
-    "♭"
-};*/
 
 // ----- 12. FUNCTION PROTOTYPES ----- //
 
@@ -815,6 +795,9 @@ void animateSplashExit();
 void animateGreenSelect();
 void animateRedBack();
 void animateYellowHighscores();
+void animateOrangeHighscores();
+void flashMilestoneLed();
+void flashMilestoneGroup();
 
 void animateGameStart(
   int activeFrets
@@ -826,6 +809,12 @@ void animateSelectSettings();
 void animateRgbTest();
 
   // D. SOUND //
+bool soundOn() {
+  return VOLUME_LEVELS[volumeIndex] > 0;
+}
+bool soundMuted() {
+  return VOLUME_LEVELS[volumeIndex] == 0;
+}
 void playTone(int buzzerPin, unsigned int frequency, unsigned long duration);
 void playGameTone(int buzzerPin, unsigned int frequency, unsigned long duration);
 void playSelectSound();
@@ -836,6 +825,7 @@ void playGameOverSound();
 void playVictorySound();
 void playInitialsClickUp();
 void playInitialsClickDown();
+
 
   // E. FLASH STORAGE //
 uint32_t calculateScoreChecksum(
@@ -2035,6 +2025,32 @@ void animateYellowHighscores() {
   clearRgbLeds();
 }
 
+void animateOrangeHighscores() {
+
+  clearRgbLeds();
+  const uint32_t orange =
+    LED_COLOR_ORANGE;
+
+  // Outer frets
+  setFretColor(0, orange);
+  setFretColor(4, orange);
+  rgbLeds.show();
+  delay(RGB_STEP_NORMAL_MS);
+
+  // Inner frets
+  setFretColor(1, orange);
+  setFretColor(3, orange);
+  rgbLeds.show();
+  delay(RGB_STEP_NORMAL_MS);
+
+  // Center fret
+  setFretColor(2, orange);
+  rgbLeds.show();
+  delay(RGB_HOLD_SHORT_MS);
+
+  clearRgbLeds();
+}
+
 void animateGameStart(
   int activeFrets
 ) {
@@ -2261,7 +2277,7 @@ void animateRgbTest() {
     );
 
     rgbLeds.show();
-    delay(120);
+    delay(80);
   }
 
   // Test red channel
@@ -2277,7 +2293,7 @@ void animateRgbTest() {
   }
 
   rgbLeds.show();
-  delay(250);
+  delay(200);
 
   // Test green channel
   for (
@@ -2292,7 +2308,7 @@ void animateRgbTest() {
   }
 
   rgbLeds.show();
-  delay(250);
+  delay(200);
 
   // Test blue channel
   for (
@@ -2307,7 +2323,7 @@ void animateRgbTest() {
   }
 
   rgbLeds.show();
-  delay(250);
+  delay(200);
 
   // Test normal control colors
   for (int fret = 0; fret < FRET_COUNT; fret++) {
@@ -2328,12 +2344,12 @@ void animateRgbTest() {
   );
 
   rgbLeds.show();
-  delay(500);
+  delay(400);
 
   // Test each physical pixel individually cyan
   for (
-    int pixel = 14;
-    pixel > 0;
+    int pixel = RGB_LED_COUNT;
+    pixel >= 0;
     pixel--
   ) {
     rgbLeds.clear();
@@ -2344,7 +2360,7 @@ void animateRgbTest() {
     );
 
     rgbLeds.show();
-    delay(120);
+    delay(80);
   }
 
   clearRgbLeds();
@@ -3022,32 +3038,6 @@ void drawGameOverScreen(int score) {
     tft.setCursor((SCREEN_WIDTH - w) / 2, 6);
     tft.print("NEW HIGHSCORE");
 
-/*/ From this part is new
-    if (newHighScore && pendingInitials != nullptr) {
-
-    tft.setTextSize(1);
-    tft.setTextColor(COLOR_SELECT);
-
-    int16_t promptX1, promptY1;
-    uint16_t promptW, promptH;
-
-    tft.getTextBounds(
-      "ENTER INITIALS",
-      0, 0,
-      &promptX1, &promptY1,
-      &promptW, &promptH
-    );
-
-    tft.setCursor(
-      (SCREEN_WIDTH - promptW) / 2,
-      69
-    );
-
-    tft.print("ENTER INITIALS");
-  }
-// to this part is new
-*/
-
   } else {
     tft.setTextColor(COLOR_GAME_OVER);
     tft.setTextSize(2);
@@ -3098,7 +3088,7 @@ void drawStateScreen(
       break;
 
     case STATE_SPEEDTEST_MENU:
-      if (speedLeaderboardOpen) {
+      if (leaderboardOpen) {
         drawSpeedLeaderboard();
       } else {
         drawSpeedtestMenu();
@@ -3106,7 +3096,7 @@ void drawStateScreen(
       break;
 
     case STATE_SIMON_MENU:
-      if (simonLeaderboardOpen) {
+      if (leaderboardOpen) {
         drawSimonLeaderboard();
       } else {
         drawSimonMenu();
@@ -3114,7 +3104,7 @@ void drawStateScreen(
       break;
 
     case STATE_REACTION_MENU:
-      if (reactionLeaderboardOpen) {
+      if (leaderboardOpen) {
         drawReactionLeaderboard();
       } else {
         drawReactionMenu();
@@ -3558,8 +3548,10 @@ void drawSpeedLeaderboard() {
     int y;
 
     if (i == 0) {
+      tft.setTextSize(2);
       y = 20;
     } else {
+      tft.setTextSize(1);
       y = 40 + (i - 1) * 12;
     }
 
@@ -3577,42 +3569,45 @@ void drawSpeedLeaderboard() {
       tft.print("."); 
     }
     
-    // Normal-mode score
-    tft.setTextColor(COLOR_SELECT);
-    tft.setCursor(i == 0 ? 22 : 18, y);
-    tft.print(speedHS.normal[speedtestIndex][i]);
+    if (!showNoLightLeaderboard) {
+      // Normal-mode score
+      tft.setTextColor(COLOR_SELECT);
+      tft.setCursor(35, y);
+      tft.print(speedHS.normal[speedtestIndex][i]);
 
-    // Normal-mode initials
-    tft.setTextSize(1);
-    tft.setCursor(50, y);
+      // Normal-mode initials
+      tft.setCursor(80, y);
+      tft.setTextSize(i == 0 ? 2 : 1);
 
-    if (speedNormalInitials[speedtestIndex][i][0] == '\0') {
-      tft.print("----");
+      if (speedNormalInitials[speedtestIndex][i][0] == '\0') {
+        tft.print("----");
+      } else {
+        tft.print(
+          speedNormalInitials[speedtestIndex][i]
+        );
+      }
+
     } else {
-      tft.print(
-        speedNormalInitials[speedtestIndex][i]
-      );
-    }
 
-    // No-light score
-    tft.setTextSize(i == 0 ? 2 : 1);
-    tft.setTextColor(COLOR_PASTEL_YELLOW);
-    tft.setCursor(i == 0 ? 88 : 90, y);
-    tft.print(speedHS.noLight[speedtestIndex][i]);
+      // No-light score
+      tft.setTextSize(i == 0 ? 2 : 1);
+      tft.setTextColor(COLOR_NOLIGHT_HS);
+      tft.setCursor(35, y);
+      tft.print(speedHS.noLight[speedtestIndex][i]);
 
-    // No-light initials
-    tft.setTextSize(1);
-    tft.setCursor(120, y);
+      // No-light initials
+      tft.setCursor(80, y);
+      tft.setTextSize(i == 0 ? 2 : 1);
 
-    if (speedNoLightInitials[speedtestIndex][i][0] == '\0') {
-      tft.print("----");
-    } else {
-      tft.print(
-        speedNoLightInitials[speedtestIndex][i]
-      );
+      if (speedNoLightInitials[speedtestIndex][i][0] == '\0') {
+        tft.print("----");
+      } else {
+        tft.print(
+          speedNoLightInitials[speedtestIndex][i]
+        );
+      }
     }
   }
-
 }
 
 void drawSimonLeaderboard() {
@@ -3646,23 +3641,54 @@ void drawSimonLeaderboard() {
     } else {
       tft.setTextSize(1); // Places 2-4
       y = 43 + (i-1) * 16;
-    } 
+    }
 
     // Position number
+    tft.setTextSize(i == 0 ? 2 : 1);
     tft.setTextColor(COLOR_TEXT);
     tft.setCursor(2, y);
     tft.print(i + 1);
-    tft.print(".");
+    
+    if (!showNoLightLeaderboard) {
+      // Normal-mode score
+      tft.setTextColor(COLOR_SELECT);
+      tft.setTextSize(i == 0 ? 2 : 1);
+      tft.setCursor(35, y);
+      tft.print(simonHS.normal[simonIndex][i]);
 
-    // Normal Mode High Score
-    tft.setTextColor(COLOR_SELECT);
-    tft.setCursor(35, y);
-    tft.print(simonHS.normal[simonIndex][i]);
+      // Normal-mode initials
+      tft.setTextSize(i == 0 ? 2 : 1);
+      tft.setCursor(80, y);
 
-    // No Light Mode High Score
-    tft.setTextColor(COLOR_PASTEL_YELLOW);
-    tft.setCursor(105, y);
-    tft.print(simonHS.noLight[simonIndex][i]);
+      if (simonNormalInitials[simonIndex][i][0] == '\0') {
+        tft.print("----");
+      } else {
+        tft.print(
+          simonNormalInitials[simonIndex][i]
+        );
+      }
+
+    } else {
+
+      // No-light score
+      tft.setTextSize(i == 0 ? 2 : 1);
+      tft.setTextColor(COLOR_NOLIGHT_HS);
+      tft.setCursor(35, y);
+      tft.print(simonHS.noLight[simonIndex][i]);
+
+      // No-light initials
+      tft.setCursor(80, y);
+      tft.setTextSize(i == 0 ? 2 : 1);
+
+      if (simonNoLightInitials[simonIndex][i][0] == '\0') {
+        tft.print("----");
+      } else {
+        tft.setTextColor(COLOR_NOLIGHT_HS);
+        tft.print(
+          simonNoLightInitials[simonIndex][i]
+        );
+      }
+    }
   }
 }
 
@@ -3673,7 +3699,7 @@ void drawReactionLeaderboard() {
   tft.setTextColor(COLOR_REACTION);
   tft.setTextSize(2);
   tft.setCursor(2, 2);
-  tft.print("pinglessest");
+  tft.print("pinglessests");
 
   // Small medal icon, top-right corner
   // Medal ribbons
@@ -3690,29 +3716,61 @@ void drawReactionLeaderboard() {
   
   for (int i = 0; i < TOP_SCORE_COUNT; i++) {
     int y;
+
     if (i == 0) {
       tft.setTextSize(2); // First place
       y = 20;
     } else {
       tft.setTextSize(1); // Places 2-4
       y = 43 + (i-1) * 16;
-    } 
+    }
 
     // Position number
+    tft.setTextSize(i == 0 ? 2 : 1);
     tft.setTextColor(COLOR_TEXT);
     tft.setCursor(2, y);
     tft.print(i + 1);
-    tft.print(".");
+    
+    if (!showNoLightLeaderboard) {
+      // Normal-mode score
+      tft.setTextColor(COLOR_SELECT);
+      tft.setTextSize(i == 0 ? 2 : 1);
+      tft.setCursor(35, y);
+      tft.print(reactionHS.normal[reactionIndex][i]);
 
-    // Normal Mode High Score
-    tft.setTextColor(COLOR_SELECT);
-    tft.setCursor(35, y);
-    tft.print(reactionHS.normal[reactionIndex][i]);
+      // Normal-mode initials
+      tft.setTextSize(i == 0 ? 2 : 1);
+      tft.setCursor(80, y);
 
-    // No Light Mode High Score
-    tft.setTextColor(COLOR_PASTEL_YELLOW);
-    tft.setCursor(105, y);
-    tft.print(reactionHS.noLight[reactionIndex][i]);
+      if (reactionNormalInitials[reactionIndex][i][0] == '\0') {
+        tft.print("----");
+      } else {
+        tft.print(
+          reactionNormalInitials[reactionIndex][i]
+        );
+      }
+
+    } else {
+
+      // No-light score
+      tft.setTextSize(i == 0 ? 2 : 1);
+      tft.setTextColor(COLOR_NOLIGHT_HS);
+      tft.setCursor(35, y);
+      tft.print(reactionHS.noLight[reactionIndex][i]);
+
+      // No-light initials
+      tft.setCursor(80, y);
+      tft.setTextSize(i == 0 ? 2 : 1);
+
+      if (reactionNoLightInitials[reactionIndex][i][0] == '\0') {
+        tft.print("----");
+      } else {
+        tft.setTextColor(COLOR_NOLIGHT_HS);
+        tft.print(
+          reactionNoLightInitials[reactionIndex][i]
+        );
+      }
+    }
   }
 }
 
@@ -3878,15 +3936,15 @@ void updateInitialsEntry() {
 
       // Open the leaderboard for the game just played
       if (currentGame == GAME_SPEEDTEST) {
-        speedLeaderboardOpen = true;
+        leaderboardOpen = true;
         currentState = STATE_SPEEDTEST_MENU;
 
       } else  if (currentGame == GAME_SIMON) {
-        simonLeaderboardOpen = true;
+        leaderboardOpen = true;
         currentState = STATE_SIMON_MENU;
 
       } else if (currentGame == GAME_REACTION) {
-        reactionLeaderboardOpen = true;
+        leaderboardOpen = true;
         currentState = STATE_REACTION_MENU;
       }
     }
@@ -4356,7 +4414,7 @@ void updateMainMenu() {
 
 void updateSpeedtestMenu() {
   // If leaderboard is currently open
-  if (speedLeaderboardOpen) {
+  if (leaderboardOpen) {
     
     // Strum changes displayed difficulty
     
@@ -4375,13 +4433,28 @@ void updateSpeedtestMenu() {
       }
       drawSpeedLeaderboard();
     }
+
+    // press orange to show nolight leaderboard
+    if (orangePressed()) {
+      animateOrangeHighscores();
+
+      showNoLightLeaderboard =
+        !showNoLightLeaderboard;
+
+      drawSpeedLeaderboard();
+    }
     
-    // Yellow returns to difficulty menu
-    if (yellowPressed()) {
+    // Gree, Red & Yellow returns to difficulty menu
+    if (greenPressed() ||
+        redPressed() ||
+        yellowPressed()
+    ) {
+      showNoLightLeaderboard = false;
       animateRedBack();
-      speedLeaderboardOpen = false;
+      leaderboardOpen = false;
       drawSpeedtestMenu();
     }    
+ 
     return;
   }
 
@@ -4413,15 +4486,14 @@ void updateSpeedtestMenu() {
   if (yellowPressed()) {
 
     playSelectSound(); // tähän voi tehdä oman äänen EDIT
-    speedLeaderboardOpen = true;
+    leaderboardOpen = true;
     
     showStateImmediately(
       STATE_SPEEDTEST_MENU
     );
 
     animateYellowHighscores();
-    
-    drawSpeedLeaderboard();
+
     return;
   }
   
@@ -4468,7 +4540,7 @@ void updateSpeedtestMenu() {
 void updateSimonMenu() {
 
   // If the leaderboard is open, check for yellow button to close it
-  if (simonLeaderboardOpen) {
+  if (leaderboardOpen) {
     if (strumUpPressed()) {
       simonIndex++;
 
@@ -4489,11 +4561,27 @@ void updateSimonMenu() {
       drawSimonLeaderboard();
     }
 
-    if (yellowPressed()) {
-      animateRedBack();
-      simonLeaderboardOpen = false;
-      drawSimonMenu();
+    // press orange to show nolight leaderboard
+    if (orangePressed()) {
+      animateOrangeHighscores();
+
+      showNoLightLeaderboard =
+        !showNoLightLeaderboard;
+
+      drawSimonLeaderboard();
     }
+    
+    // Gree, Red & Yellow returns to difficulty menu
+    if (greenPressed() ||
+        redPressed() ||
+        yellowPressed()
+    ) {
+      showNoLightLeaderboard = false;
+      animateRedBack();
+      leaderboardOpen = false;
+      drawSimonMenu();
+    }   
+
     return;
   }
 
@@ -4525,7 +4613,7 @@ void updateSimonMenu() {
   if (yellowPressed()) {
 
     playSelectSound(); // tähän voi tehdä oman äänen EDIT
-    simonLeaderboardOpen = true;
+    leaderboardOpen = true;
 
     showStateImmediately(
       STATE_SIMON_MENU
@@ -4575,7 +4663,7 @@ void updateSimonMenu() {
 void updateReactionMenu() {
 
   // If the leaderboard is open, check for yellow button to close it
-  if (reactionLeaderboardOpen) {
+  if (leaderboardOpen) {
 
     if (strumUpPressed()) {
 
@@ -4589,20 +4677,35 @@ void updateReactionMenu() {
 
   }
 
-  if (strumDownPressed()) {
+    if (strumDownPressed()) {
 
-    reactionIndex--;
+      reactionIndex--;
 
-    if (reactionIndex < 0) {
-      reactionIndex = REACTION_COUNT -1;
+      if (reactionIndex < 0) {
+        reactionIndex = REACTION_COUNT -1;
+      }
+
+      drawReactionLeaderboard();
     }
 
-    drawReactionLeaderboard();
-  }
+    // press orange to show nolight leaderboard
+    if (orangePressed()) {
+      animateOrangeHighscores();
 
-    if (yellowPressed()) {
+      showNoLightLeaderboard =
+        !showNoLightLeaderboard;
+
+      drawReactionLeaderboard();
+    }
+    
+    // Gree, Red & Yellow returns to difficulty menu
+    if (greenPressed() ||
+        redPressed() ||
+        yellowPressed()
+    ) {
+      showNoLightLeaderboard = false;
       animateRedBack();
-      reactionLeaderboardOpen = false;
+      leaderboardOpen = false;
       drawReactionMenu();
     }
 
@@ -4637,8 +4740,11 @@ void updateReactionMenu() {
     playSelectSound(); // tähän voi tehdä oman äänen EDIT
     animateYellowHighscores();
     
-    reactionLeaderboardOpen = true;
-    drawReactionLeaderboard();
+    leaderboardOpen = true;
+
+    showStateImmediately(
+      STATE_REACTION_MENU
+    );
     return;
   }
 
@@ -4754,7 +4860,8 @@ void updateSettingsMenu() {
   bool activateSetting = false;
 
   if (greenPressed()) {
-      activateSetting = true;
+    animateGreenSelect();
+    activateSetting = true;
   }
 
   if (startPressed()) {
@@ -4762,6 +4869,7 @@ void updateSettingsMenu() {
   }
 
   if (orangePressed()) {
+    animateOrangeHighscores();
 
     if (settingsIndex == 0) {
 
@@ -4823,7 +4931,7 @@ void updateSettingsMenu() {
       case 1:
         // Brightness will be implemented next.
         increaseRgbBrightness();
-
+/*
         if (
           rgbBrightness >
           RGB_BRIGHTNESS_MAX -
@@ -4845,6 +4953,7 @@ void updateSettingsMenu() {
           LED_COLOR_LAVENDER,
           80
         );
+*/
         drawSettingsMenu();
         break;
 
@@ -5697,7 +5806,7 @@ void runReactionGame() {
 
       delay(500);
 
-      reactionLeaderboardOpen = false;
+      leaderboardOpen = false;
       currentState = STATE_REACTION_MENU;
 
       return;
@@ -5883,12 +5992,6 @@ void runReactionGame() {
     pendingInitials != nullptr
   ) {
 
-    reactionLeaderboardOpen = true;
-
-    showStateImmediately(
-      STATE_REACTION_MENU
-    );
-
     playVictorySound();
     animateYellowHighscores();
 
@@ -6055,9 +6158,8 @@ void runSoloGame() {
     // ----- MANUAL EXIT COMBINATION ----- //
 
     if (
-      input.fretHeld[1] &&
-      input.fretHeld[4] &&
-      input.strumUpPressed
+      startPressed() ||
+      selectPressed()
     ) {
       playBackSound();
       animateRedBack();
@@ -6072,7 +6174,7 @@ void runSoloGame() {
 
     if (
       !anyFretHeld &&
-      millis() - lastActivity > soloTimeoutMs
+      millis() - lastActivity > SOLO_IDLE_TIMEOUT_MS
     ) {
       playBackSound();
       animateRedBack();
