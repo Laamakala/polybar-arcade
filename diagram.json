@@ -79,7 +79,7 @@
       "id": "strip1",
       "top": 59.7,
       "left": -57.6,
-      "attrs": { "pixels": "14" }
+      "attrs": { "pixels": "9" }
     },
     {
       "type": "wokwi-analog-joystick",

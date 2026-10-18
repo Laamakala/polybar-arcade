@@ -109,37 +109,32 @@ constexpr int JOYSTICK_LOW_THRESHOLD =
 constexpr int JOYSTICK_HIGH_THRESHOLD =
   JOYSTICK_CENTER + JOYSTICK_DEADZONE;
 
-  // ----- RGB LED INDEXES ----- //
+// ----- RGB LED INDEXES ----- //
 
-constexpr int RGB_FRET1_A = 0;
-constexpr int RGB_FRET1_B = 1;
+// Configurator LED 1 and 2
+constexpr int RGB_START = 0;
+constexpr int RGB_SELECT = 1;
 
-constexpr int RGB_FRET2_A = 2;
-constexpr int RGB_FRET2_B = 3;
+// Configurator LED 3 and 4
+constexpr int RGB_STRUM_DOWN = 2;
+constexpr int RGB_STRUM_UP = 3;
 
-constexpr int RGB_FRET3_A = 4;
-constexpr int RGB_FRET3_B = 5;
+// Configurator LED 5 through 9
+constexpr int RGB_GREEN_FRET = 8;
+constexpr int RGB_RED_FRET = 7;
+constexpr int RGB_YELLOW_FRET = 6;
+constexpr int RGB_BLUE_FRET = 5;
+constexpr int RGB_ORANGE_FRET = 4;
 
-constexpr int RGB_FRET4_A = 6;
-constexpr int RGB_FRET4_B = 7;
+constexpr int RGB_LED_COUNT = 9;
 
-constexpr int RGB_FRET5_A = 8;
-constexpr int RGB_FRET5_B = 9;
-
-constexpr int RGB_STRUM_UP = 10;
-constexpr int RGB_STRUM_DOWN = 11;
-
-constexpr int RGB_START = 12;
-constexpr int RGB_SELECT = 13;
-
-constexpr int RGB_LED_COUNT = 14;
-
-constexpr int FRET_RGB_PIXELS[FRET_COUNT][2] = {
-  { RGB_FRET1_A, RGB_FRET1_B },
-  { RGB_FRET2_A, RGB_FRET2_B },
-  { RGB_FRET3_A, RGB_FRET3_B },
-  { RGB_FRET4_A, RGB_FRET4_B },
-  { RGB_FRET5_A, RGB_FRET5_B }
+// Loigical fret number -> physical LED output
+constexpr int FRET_RGB_PIXELS[FRET_COUNT] = {
+  RGB_GREEN_FRET,
+  RGB_RED_FRET,
+  RGB_YELLOW_FRET,
+  RGB_BLUE_FRET,
+  RGB_ORANGE_FRET
 };
 
 // ----- 4. HARDWARE OBJECTS ----- //
@@ -1526,7 +1521,7 @@ void playStartupFretSequence() {
     30
   };
 
-  // Light fret RGB LED pairs one by one
+    // Light the five logical fret LED outputs one by one
   for (int fret = 0; fret < FRET_COUNT; fret++) {
 
     // Check for Green + Orange held during startup -> mute sounds
@@ -1610,7 +1605,7 @@ void playStartupFretSequence() {
 
   Serial.println("Startup strums complete");
 
-  // Light all five fret RGB LED pairs
+    // Light all five fret LED outputs
   for (int fret = 0; fret < FRET_COUNT; fret++) {
 
     setFretColor(
@@ -1640,7 +1635,7 @@ void playStartupFretSequence() {
 
   delay(500);
 
-  // Turn off all 14 RGB LEDs
+    // Turn off all 9 RGB LED outputs
   clearRgbLeds();
 
   noTone(FX_BUZZER);
@@ -1738,13 +1733,10 @@ void setFretColor(
     return;
   }
 
+  // Both physical LEDs for this fret are electrically
+  // connected as a single logical LED output.
   rgbLeds.setPixelColor(
-    FRET_RGB_PIXELS[fret][0],
-    color
-  );
-
-  rgbLeds.setPixelColor(
-    FRET_RGB_PIXELS[fret][1],
+    FRET_RGB_PIXELS[fret],
     color
   );
 }
@@ -1881,7 +1873,7 @@ void animateSplashExit() {
     sizeof(splashColors) /
     sizeof(splashColors[0]);
 
-  // Light all 14 pixels individually
+    // Light all 9 LED outputs individually
   for (
     int pixel = 0;
     pixel < RGB_LED_COUNT;
@@ -2164,10 +2156,10 @@ void animateNewHighscore() {
 void animateSelectSettings() {
 
   const int selectSequence[] = {
-    RGB_SELECT,       // Pixel 13
-    RGB_START,        // Pixel 12
-    RGB_STRUM_DOWN,   // Pixel 11
-    RGB_STRUM_UP      // Pixel 10
+    RGB_SELECT,
+    RGB_START,
+    RGB_STRUM_DOWN,
+    RGB_STRUM_UP
   };
 
   constexpr int sequenceCount =
@@ -2199,7 +2191,6 @@ void animateSelectSettings() {
 
   rgbLeds.show();
 
-  // Light pixels 13, 12, 11, and 10
   for (
     int index = 0;
     index < sequenceCount;
@@ -2261,9 +2252,21 @@ void animateSelectSettings() {
 
 void animateRgbTest() {
 
+  const uint32_t physicalColors[RGB_LED_COUNT] = {
+    LED_COLOR_LAVENDER,   // Start
+    LED_COLOR_YELLOW,     // Select
+    LED_COLOR_PINK,       // Strum Down
+    LED_COLOR_TURQUOISE,  // Strum Up
+    LED_COLOR_ORANGE,     // Orange fret
+    LED_COLOR_BLUE,       // Blue fret
+    LED_COLOR_YELLOW,     // Yellow fret
+    LED_COLOR_RED,        // Red fret
+    LED_COLOR_GREEN       // Green fret
+  };
+
   clearRgbLeds();
 
-  // Test each physical pixel individually lavender
+  // Test every output separately
   for (
     int pixel = 0;
     pixel < RGB_LED_COUNT;
@@ -2273,14 +2276,14 @@ void animateRgbTest() {
 
     rgbLeds.setPixelColor(
       pixel,
-      LED_COLOR_LAVENDER
+      physicalColors[pixel]
     );
 
     rgbLeds.show();
-    delay(80);
+    delay(350);
   }
 
-  // Test red channel
+  // Show all outputs simultaneously
   for (
     int pixel = 0;
     pixel < RGB_LED_COUNT;
@@ -2288,80 +2291,12 @@ void animateRgbTest() {
   ) {
     rgbLeds.setPixelColor(
       pixel,
-      rgbLeds.Color(255, 0, 0)
+      physicalColors[pixel]
     );
   }
 
   rgbLeds.show();
-  delay(200);
-
-  // Test green channel
-  for (
-    int pixel = 0;
-    pixel < RGB_LED_COUNT;
-    pixel++
-  ) {
-    rgbLeds.setPixelColor(
-      pixel,
-      rgbLeds.Color(0, 255, 0)
-    );
-  }
-
-  rgbLeds.show();
-  delay(200);
-
-  // Test blue channel
-  for (
-    int pixel = 0;
-    pixel < RGB_LED_COUNT;
-    pixel++
-  ) {
-    rgbLeds.setPixelColor(
-      pixel,
-      rgbLeds.Color(0, 0, 255)
-    );
-  }
-
-  rgbLeds.show();
-  delay(200);
-
-  // Test normal control colors
-  for (int fret = 0; fret < FRET_COUNT; fret++) {
-    setFretColor(
-      fret,
-      FRET_RGB_COLORS[fret]
-    );
-  }
-
-  setStrumColors(
-    LED_COLOR_TURQUOISE,
-    LED_COLOR_PINK
-  );
-
-  setUtilityColors(
-    LED_COLOR_YELLOW,
-    LED_COLOR_LAVENDER
-  );
-
-  rgbLeds.show();
-  delay(400);
-
-  // Test each physical pixel individually cyan
-  for (
-    int pixel = RGB_LED_COUNT;
-    pixel >= 0;
-    pixel--
-  ) {
-    rgbLeds.clear();
-
-    rgbLeds.setPixelColor(
-      pixel,
-      LED_COLOR_TURQUOISE
-    );
-
-    rgbLeds.show();
-    delay(80);
-  }
+  delay(1000);
 
   clearRgbLeds();
 }
