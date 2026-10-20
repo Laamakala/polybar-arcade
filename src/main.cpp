@@ -2,7 +2,13 @@
 
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_ILI9341.h> // #include <Adafruit_ST7735.h>
+#ifdef WOKWI_SIMULATION
+
+#include <Adafruit_ILI9341.h>
+#else
+#include <Adafruit_ST7735.h>
+#endif
+
 #include <SPI.h>
 
 #ifdef WOKWI_SIMULATION
@@ -10,6 +16,7 @@
 #else
   #include <Adafruit_DotStar.h>
 #endif
+
 
 // ----- FLASH STORAGE ----- //
 
@@ -51,7 +58,7 @@ constexpr unsigned long MENU_COOLDOWN = 50;
 // Settings menu-count constants:
 constexpr int SETTINGS_COUNT = 4;
 
-constexpr uint8_t RGB_BRIGHTNESS_DEFAULT = 128;
+constexpr uint8_t RGB_BRIGHTNESS_DEFAULT = 64;
 constexpr uint8_t RGB_BRIGHTNESS_MIN = 16;
 constexpr uint8_t RGB_BRIGHTNESS_MAX = 255;
 constexpr uint8_t RGB_BRIGHTNESS_STEP = 16;
@@ -66,39 +73,42 @@ constexpr int RGB_FADE_STEPS = 12;
 
 // ----- 3. PIN DEFINITIONS ----- //
 
-constexpr uint8_t TFT_CS = 17;
-constexpr uint8_t TFT_DC = 16;
-constexpr uint8_t TFT_RST = 20;
+constexpr uint8_t TFT_CS = 16;
+constexpr uint8_t TFT_DC = 9;
+constexpr uint8_t TFT_SCK = 14;
+constexpr uint8_t TFT_MOSI = 15;
+// TFT reset is tied to 3v3
+constexpr int8_t TFT_RST =-1;
 
 // Start and Select
-constexpr uint8_t START_BUTTON_PIN = 0;
-constexpr uint8_t SELECT_BUTTON_PIN = 2;
+constexpr uint8_t START_BUTTON_PIN = 10;
+constexpr uint8_t SELECT_BUTTON_PIN = 11;
 
 // Fret buttons
 constexpr uint8_t BUTTON_PINS[FRET_COUNT] = {
-  1,  // Green
-  3,  // Red
-  5,  // Yellow
-  7,  // Blue
-  9   // Orange
+  17,  // Green
+  18,  // Red
+  19,  // Yellow
+  20,  // Blue
+  21   // Orange
 };
 
 // RGB data
-constexpr uint8_t RGB_NEOPIXEL_PIN = 11; // for simulation
-constexpr uint8_t RGB_DATA_PIN = 11;  // for physical build
-constexpr uint8_t RGB_CLOCK_PIN = 12; // for physical build
+constexpr uint8_t RGB_NEOPIXEL_PIN = 6; // for simulation wOKWI ONLY
+constexpr uint8_t RGB_DATA_PIN = 3;  // for physical build
+constexpr uint8_t RGB_CLOCK_PIN = 6; // for physical build
 
 // Buzzers
-constexpr uint8_t FX_BUZZER = 14;
-constexpr uint8_t NOTE_BUZZER = 15;
+constexpr uint8_t FX_BUZZER = 2;    // Wokwi bz1
+constexpr uint8_t NOTE_BUZZER = 4;  // Wokwi bz2
 
 // Strum buttons
-constexpr uint8_t STRUM_UP_PIN = 21;
-constexpr uint8_t STRUM_DOWN_PIN = 22;
+constexpr uint8_t STRUM_UP_PIN = 7;
+constexpr uint8_t STRUM_DOWN_PIN = 8;
 // Joystick
 constexpr uint8_t JOYSTICK_X_PIN = 26;
 constexpr uint8_t JOYSTICK_Y_PIN = 27;
-constexpr uint8_t JOYSTICK_BUTTON_PIN = 28;
+constexpr uint8_t JOYSTICK_BUTTON_PIN = 22;
 
 constexpr int JOYSTICK_CENTER = 512;
 constexpr int JOYSTICK_DEADZONE = 180;
@@ -120,11 +130,11 @@ constexpr int RGB_STRUM_DOWN = 2;
 constexpr int RGB_STRUM_UP = 3;
 
 // Configurator LED 5 through 9
-constexpr int RGB_GREEN_FRET = 8;
-constexpr int RGB_RED_FRET = 7;
+constexpr int RGB_GREEN_FRET = 4;
+constexpr int RGB_RED_FRET = 5;
 constexpr int RGB_YELLOW_FRET = 6;
-constexpr int RGB_BLUE_FRET = 5;
-constexpr int RGB_ORANGE_FRET = 4;
+constexpr int RGB_BLUE_FRET = 7;
+constexpr int RGB_ORANGE_FRET = 8;
 
 constexpr int RGB_LED_COUNT = 9;
 
@@ -139,7 +149,27 @@ constexpr int FRET_RGB_PIXELS[FRET_COUNT] = {
 
 // ----- 4. HARDWARE OBJECTS ----- //
 
-Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
+#ifdef WOKWI_SIMULATION
+
+Adafruit_ILI9341 tft(
+  TFT_CS,
+  TFT_DC,
+  TFT_MOSI,
+  TFT_SCK,
+  TFT_RST
+);
+
+#else
+
+Adafruit_ST7735 tft(
+  TFT_CS,
+  TFT_DC,
+  TFT_MOSI,
+  TFT_SCK,
+  TFT_RST
+);
+
+#endif
 
 LittleFS_MBED* scoreFileSystem = nullptr;
 
@@ -162,7 +192,63 @@ Adafruit_DotStar rgbLeds(
 
 #endif
 
-// ----- 5. THEME COLORS ----- // 
+// ----- 5. THEME COLORS ----- //
+
+#ifdef WOKWI_SIMULATION
+
+constexpr uint16_t DISPLAY_BLACK =
+  ILI9341_BLACK;
+
+constexpr uint16_t DISPLAY_RED =
+  ILI9341_RED;
+
+constexpr uint16_t DISPLAY_GREEN =
+  ILI9341_GREEN;
+
+constexpr uint16_t DISPLAY_BLUE =
+  ILI9341_BLUE;
+
+constexpr uint16_t DISPLAY_CYAN =
+  ILI9341_CYAN;
+
+constexpr uint16_t DISPLAY_MAGENTA =
+  ILI9341_MAGENTA;
+
+constexpr uint16_t DISPLAY_YELLOW =
+  ILI9341_YELLOW;
+
+constexpr uint16_t DISPLAY_ORANGE =
+  ILI9341_ORANGE;
+
+#else
+
+constexpr uint16_t DISPLAY_BLACK =
+  ST77XX_BLACK;
+
+constexpr uint16_t DISPLAY_RED =
+  ST77XX_RED;
+
+constexpr uint16_t DISPLAY_GREEN =
+  ST77XX_GREEN;
+
+constexpr uint16_t DISPLAY_BLUE =
+  ST77XX_BLUE;
+
+constexpr uint16_t DISPLAY_CYAN =
+  ST77XX_CYAN;
+
+constexpr uint16_t DISPLAY_MAGENTA =
+  ST77XX_MAGENTA;
+
+constexpr uint16_t DISPLAY_YELLOW =
+  ST77XX_YELLOW;
+
+constexpr uint16_t DISPLAY_ORANGE =
+  ST77XX_ORANGE;
+
+#endif
+
+// ----- DISPLAY-INDEPENDENT RGB565 COLORS ----- //
 
 // CUSTOM COLOR PALETTE //
 const uint16_t COLOR_TURQUOISE = tft.color565(64, 224, 208);
@@ -174,10 +260,10 @@ const uint16_t COLOR_CREAM_YELLOW = tft.color565(255, 245, 180);
 const uint16_t COLOR_NOLIGHT_HS = tft.color565(255, 165, 0);
 
 // Boot
-const uint16_t COLOR_BG      = ILI9341_BLACK;               // background color     // Black
+const uint16_t COLOR_BG      = DISPLAY_BLACK;               // background color     // Black
 const uint16_t COLOR_START1  = COLOR_SALMON_PINK;                      // screen start color1  // Pink
 const uint16_t COLOR_START2  = tft.color565(100, 255, 190); // screen start color2  // Mint green
-const uint16_t COLOR_START3  = ILI9341_CYAN;                // screen start color3  // Cyan
+const uint16_t COLOR_START3  = DISPLAY_CYAN;                // screen start color3  // Cyan
 
 const uint16_t COLOR_SPLASH1  = tft.color565(64, 224, 208);  // splash screen title1 color // Turqoiuse
 const uint16_t COLOR_SPLASH2  = COLOR_SALMON_PINK;                      // splash screen title2 color // Pink
@@ -193,19 +279,19 @@ const uint16_t COLOR_GAME_OVER  = tft.color565(128, 0, 128);  // "GAME OVER" tex
 
 // Game title colors
 const uint16_t COLOR_SPEEDTEST = COLOR_SALMON_PINK;          // pastel pink speedtest title
-const uint16_t COLOR_SIMON     = tft.color565(190, 140, 255);;  // lavender yellow simon says title
-const uint16_t COLOR_REACTION  = ILI9341_CYAN;    // reaction title
-const uint16_t COLOR_SOLO      = ILI9341_MAGENTA; // solo title
+const uint16_t COLOR_SIMON     = tft.color565(190, 140, 255); // lavender yellow simon says title
+const uint16_t COLOR_REACTION  = DISPLAY_CYAN;    // reaction title
+const uint16_t COLOR_SOLO      = DISPLAY_MAGENTA; // solo title
 
-const uint16_t COLOR_SUCCESS  = ILI9341_ORANGE; // new high score color
-const uint16_t COLOR_ERROR    = ILI9341_RED;    // game over color
+const uint16_t COLOR_SUCCESS  = DISPLAY_ORANGE; // new high score color
+const uint16_t COLOR_ERROR    = DISPLAY_RED;    // game over color
 
 // Fret LED colors
-const uint16_t COLOR_FRET1    = ILI9341_GREEN;  // Fret1: green
-const uint16_t COLOR_FRET2    = ILI9341_RED;    // Fret2: red
-const uint16_t COLOR_FRET3    = ILI9341_YELLOW; // Fret3: yellow
-const uint16_t COLOR_FRET4    = ILI9341_BLUE;   // Fret4: blue
-const uint16_t COLOR_FRET5    = ILI9341_ORANGE; // Fret5: orange
+const uint16_t COLOR_FRET1    = DISPLAY_GREEN;  // Fret1: green
+const uint16_t COLOR_FRET2    = DISPLAY_RED;    // Fret2: red
+const uint16_t COLOR_FRET3    = DISPLAY_YELLOW; // Fret3: yellow
+const uint16_t COLOR_FRET4    = DISPLAY_BLUE;   // Fret4: blue
+const uint16_t COLOR_FRET5    = DISPLAY_ORANGE; // Fret5: orange
 
   // RGB LED COLORS //
 const uint32_t LED_COLOR_GREEN =
@@ -523,8 +609,6 @@ struct PreviousInputState {
   bool joystickUp;
   bool joystickDown;
 };
-
-// Replace all (digitalRead(JOYSTICK_BUTTON_PIN)) == LOW with "(input.fretPressed[#inputnumberhere#])"
 
 InputState input = {};
 PreviousInputState previousInput = {};
@@ -2248,15 +2332,15 @@ void animateSelectSettings() {
 void animateRgbTest() {
 
   const uint32_t physicalColors[RGB_LED_COUNT] = {
-    LED_COLOR_LAVENDER,   // Start
-    LED_COLOR_YELLOW,     // Select
-    LED_COLOR_PINK,       // Strum Down
-    LED_COLOR_TURQUOISE,  // Strum Up
-    LED_COLOR_ORANGE,     // Orange fret
-    LED_COLOR_BLUE,       // Blue fret
-    LED_COLOR_YELLOW,     // Yellow fret
-    LED_COLOR_RED,        // Red fret
-    LED_COLOR_GREEN       // Green fret
+    LED_COLOR_LAVENDER,   // 0: Start
+    LED_COLOR_YELLOW,     // 1: Select
+    LED_COLOR_PINK,       // 2: Strum Down
+    LED_COLOR_TURQUOISE,  // 3: Strum Up
+    LED_COLOR_GREEN,     // 4: Green fret
+    LED_COLOR_RED,       // 5: Red fret
+    LED_COLOR_YELLOW,     // 6: Yellow fret
+    LED_COLOR_BLUE,        // 7: Blue fret
+    LED_COLOR_ORANGE       // 8: Orange fret
   };
 
   clearRgbLeds();
@@ -2278,7 +2362,7 @@ void animateRgbTest() {
     delay(350);
   }
 
-  // Show all outputs simultaneously
+  // Show all 9 outputs simultaneously
   for (
     int pixel = 0;
     pixel < RGB_LED_COUNT;
@@ -4068,7 +4152,7 @@ void startReactionCue(int targetFret) {
       // Each target fret has a different note      
       playTone(
         NOTE_BUZZER,
-        SOLO_BLUES[3][targetFret],
+        GAME_SCALE[targetFret],
         120
       );
     }
@@ -4790,7 +4874,6 @@ void updateSettingsMenu() {
   bool activateSetting = false;
 
   if (greenPressed()) {
-    animateGreenSelect();
     activateSetting = true;
   }
 
@@ -6204,15 +6287,27 @@ void setup() {
   // Optional Mute Combination red+blue
   if (
     digitalRead(BUTTON_PINS[1]) == LOW &&
-    digitalRead(BUTTON_PINS[3]) == LOW  
-  ) { 
-  
+    digitalRead(BUTTON_PINS[3]) == LOW
+  ) {
+    volumeIndex = 0;
+
     noTone(NOTE_BUZZER);
     noTone(FX_BUZZER);
+
+    Serial.println(
+      "Sound muted at startup"
+    );
   }
 
-  // Keep the known-working display initialization unchanged
+  #ifdef WOKWI_SIMULATION
+
   tft.begin();
+
+  #else
+  tft.initR(
+    INITR_MINI160x80
+  );
+  #endif
 
   tft.setRotation(0);
   tft.fillScreen(COLOR_START1);
@@ -6226,7 +6321,6 @@ void setup() {
   tft.fillScreen(COLOR_START3);
   delay(500);
 
-  tft.begin();
   tft.setRotation(3);
   
   // Run the startup hardware test
