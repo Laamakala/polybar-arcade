@@ -50,28 +50,36 @@ polybar-arcade/
 
 ### Display
 
-- GP17: TFT CS
-- GP16: TFT D/C
-- GP20: TFT reset
-- GP19: TFT MOSI
-- GP18: TFT SCK
+- GP-1: TFT reset
+- GP9: TFT D/C
+- GP14: TFT SCK
+- GP15: TFT MOSI
+- GP16: TFT CS
+
+### Start and Select
+- GP10: Start
+- GP11: Select
 
 ### Fret controls
 
-- GP1, GP3, GP5, GP7, GP9: fret buttons
-- GP2, GP4, GP6, GP8, GP10: fret LEDs
+- GP17, GP18, GP19, GP20, GP21: fret buttons
+- GP3: LED data pin
+- GP6: LED Clock pin
 
 ### Strum controls
 
-- GP27: strum up
-- GP28: strum down
-- GP22: strum-up LED
-- GP21: strum-down LED
+- GP7: strum up
+- GP8: strum down
+
+### Joystick
+- GP26: HORZ
+- GP27: VERT
+- GP22: JoystickButton
 
 ### Audio
 
-- GP15: note buzzer
-- GP26: effects buzzer
+- GP2: note buzzer
+- GP4: effects buzzer
 
 ## Build with PlatformIO
 
