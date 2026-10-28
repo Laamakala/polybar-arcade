@@ -1,38 +1,40 @@
-# Polybar Arcade
+Polybar Arcade
 
-A Raspberry Pi Pico W arcade controller and game collection built with C++, PlatformIO, and Wokwi.
+A Raspberry Pi Pico and Pico W arcade game collection built with C++, PlatformIO, and Wokwi.
 
-Polybar Arcade combines five illuminated fret buttons, a two-direction strum control, two buzzers, and a TFT display. The current firmware includes menu navigation, multiple difficulty levels, top-four leaderboards, four-character player initials, startup light and sound effects, and four game modes.
+Polybar Arcade combines five illuminated fret buttons, a two-direction strum control, an analog joystick, two buzzers, and a TFT display.
 
-![Polybar Arcade Wokwi layout](docs/assets/diagram.png)
-![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade_menu.png)
-![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade_speedtest.png)
-![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade_highscores.png)
-![Polybar Arcade Wokwi layout](docs/assets/polybar-arcade.png)
+The current firmware includes menu navigation, multiple difficulty levels, persistent top-four leaderboards, four-character player initials, startup light and sound effects, and four game modes.
 
-## Current games
+Polybar Arcade Wokwi layoutPolybar Arcade main menuPolybar Arcade SpeedtestPolybar Arcade highscoresPolybar Arcade
+Current games
 
-- **Speedtest**: follow accelerating light and sound cues.
-- **Simon Says**: repeat an increasingly long sequence of fret and strum inputs.
-- **Reaction**: respond to a visual or audio cue as quickly as possible.
-- **Solo Jam**: play minor, major, and blues note layouts.
+    Speedtest: follow accelerating light and sound cues.
+    Simon Says: repeat an increasingly long sequence of fret and strum inputs.
+    Reaction: respond to a visual or audio cue as quickly as possible.
+    Solo Jam: play minor, major, and blues note layouts.
 
-## Current features
+Current features
 
-- Five fret buttons and matching LEDs
-- Strum up/down input with two dedicated LEDs
-- Two buzzers for notes and effects
-- ILI9341 display in the Wokwi simulation
-- 160 x 80 interface layout for the planned compact TFT
-- Normal and no-light score categories
-- Top-four leaderboards per difficulty
-- Four-character initials using printable ASCII characters
-- Startup hardware test and blues-inspired boot melody
-- Green + Orange held during startup to mute sound
+    Five fret buttons with addressable RGB lighting
+    Strum Up and Strum Down with dedicated LEDs
+    Start and Select buttons with dedicated LEDs
+    Analog joystick with center-click input
+    Two buzzers for musical notes and sound effects
+    ILI9341 display in the Wokwi simulation
+    Physical 160 × 80 ST7735 display support
+    Nine logical APA102/SK9822 LED outputs
+    Adjustable volume and RGB brightness
+    RGB hardware-test animation
+    Normal and no-light score categories
+    Persistent scores and initials using LittleFS
+    Top-four leaderboards per difficulty
+    Four-character initials using printable ASCII characters
+    Startup hardware test and blues-inspired boot melody
+    Green + Orange held during startup to mute sound
 
-## Project structure
+Project structure
 
-```text
 polybar-arcade/
 ├── platformio.ini
 ├── diagram.json
@@ -43,68 +45,60 @@ polybar-arcade/
     ├── index.html
     ├── style.css
     └── assets/
-        └── polybar-arcade.png
-```
+        ├── diagram.png
+        ├── polybar-arcade.png
+        ├── polybar-arcade_menu.png
+        ├── polybar-arcade_speedtest.png
+        └── polybar-arcade_highscores.png
 
-## GPIO mapping
+ GPIO mapping
+Physical ST7735 display
+GP9: TFT D/C
+GP14: TFT SCK
+GP15: TFT MOSI
+GP16: TFT CS
+RST: tied directly to 3V3
+VCC: 3V3
+GND: GND
 
-### Display
+The physical build uses the ST7735 driver. The Wokwi simulation uses an ILI9341 display as a simulator-compatible substitute.
 
-- GP-1: TFT reset
-- GP9: TFT D/C
-- GP14: TFT SCK
-- GP15: TFT MOSI
-- GP16: TFT CS
+Start and Select
+GP10: Start
+GP11: Select
+Fret controls
+GP17: Green fret
+GP18: Red fret
+GP19: Yellow fret
+GP20: Blue fret
+GP21: Orange fret
+Strum controls
+GP7: Strum Up
+GP8: Strum Down
+Joystick
+GP26: Horizontal axis
+GP27: Vertical axis
+GP22: Joystick center click
+Hall sensor
+GP28: Hall sensor / whammy input
 
-### Start and Select
-- GP10: Start
-- GP11: Select
+The current Arcade firmware reserves this input for future whammy support.
 
-### Fret controls
+APA102 / SK9822 LEDs
+GP3: LED Data / DI
+GP6: LED Clock / CI
 
-- GP17, GP18, GP19, GP20, GP21: fret buttons
-- GP3: LED data pin
-- GP6: LED Clock pin
+Audio
+GP2: Effects buzzer
+GP4: Note buzzer
 
-### Strum controls
-
-- GP7: strum up
-- GP8: strum down
-
-### Joystick
-- GP26: HORZ
-- GP27: VERT
-- GP22: JoystickButton
-
-### Audio
-
-- GP2: note buzzer
-- GP4: effects buzzer
-
-## Build with PlatformIO
-
-1. Install Visual Studio Code and the PlatformIO extension.
-2. Open this repository as a PlatformIO project.
-3. Build the `pico` environment.
-4. Run the project in Wokwi or upload it to compatible RP2040 hardware.
-
-## Run in Wokwi
-
-The repository includes `diagram.json` and `wokwi.toml`. Build the project first so Wokwi can load:
-
-```text
-.pio/build/pico/firmware.uf2
-.pio/build/pico/firmware.elf
-```
-
-## Roadmap
-
-- Persistent high scores in flash
-- Joystick, whammy, Start, and Select inputs
-- Additional rhythm and reaction games
-- Refactoring the single source file into input, display, sound, score, and game modules
-- Final migration from the simulated ILI9341 to the planned 160 x 80 ST7735 display
-
-## License
-
-MIT License. See [LICENSE](LICENSE).
+LED chain
+LED 0: Start
+LED 1: Select
+LED 2: Strum Down
+LED 3: Strum Up
+LED 4: Green fret
+LED 5: Red fret
+LED 6: Yellow fret
+LED 7: Blue fret
+LED 8: Orange fret
