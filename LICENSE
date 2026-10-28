@@ -19,3 +19,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Main changes made The corrected version fixes **TFT reset**, swaps the **buzzer labels** to match the code, documents each fret GPIO and the confirmed nine-output LED order, updates the two PlatformIO environments, and removes completed work from the roadmap. It also clarifies that installing Arcade replaces the existing Santroller/Three Pieces firmware rather than creating dual boot automatically.
