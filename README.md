@@ -34,7 +34,7 @@ Current features
     Green + Orange held during startup to mute sound
 
 Project structure
-
+```
 polybar-arcade/
 ├── platformio.ini
 ├── diagram.json
@@ -50,6 +50,7 @@ polybar-arcade/
         ├── polybar-arcade_menu.png
         ├── polybar-arcade_speedtest.png
         └── polybar-arcade_highscores.png
+```
 
  GPIO mapping
 Physical ST7735 display
