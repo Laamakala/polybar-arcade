@@ -54,6 +54,7 @@ polybar-arcade/
 
  GPIO mapping
 Physical ST7735 display
+```
 GP9: TFT D/C
 GP14: TFT SCK
 GP15: TFT MOSI
@@ -61,9 +62,10 @@ GP16: TFT CS
 RST: tied directly to 3V3
 VCC: 3V3
 GND: GND
-
+```
 The physical build uses the ST7735 driver. The Wokwi simulation uses an ILI9341 display as a simulator-compatible substitute.
 
+```
 Start and Select
 GP10: Start
 GP11: Select
@@ -82,9 +84,9 @@ GP27: Vertical axis
 GP22: Joystick center click
 Hall sensor
 GP28: Hall sensor / whammy input
-
+```
 The current Arcade firmware reserves this input for future whammy support.
-
+```
 APA102 / SK9822 LEDs
 GP3: LED Data / DI
 GP6: LED Clock / CI
@@ -103,3 +105,4 @@ LED 5: Red fret
 LED 6: Yellow fret
 LED 7: Blue fret
 LED 8: Orange fret
+```
