@@ -35,19 +35,12 @@ Current features
 
 Project structure
 
-
 polybar-arcade/
-
 ├── platformio.ini
-
 ├── diagram.json
-
 ├── wokwi.toml
-
 ├── src/
-
 │   └── main.cpp
-
 └── docs/
     ├── index.html
     ├── style.css
