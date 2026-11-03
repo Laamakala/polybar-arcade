@@ -55,13 +55,16 @@ polybar-arcade/
  GPIO mapping
 Physical ST7735 display
 ```
-GP9: TFT D/C
-GP14: TFT SCK
-GP15: TFT MOSI
-GP16: TFT CS
-RST: tied directly to 3V3
-VCC: 3V3
-GND: GND
+TFT             Pico
+
+GND    -------- GND
+VCC    -------- 3V3(OUT)
+SCL    -------- GP18  SPI0 SCK
+SDA    -------- GP19  SPI0 TX/MOSI
+RES    -------- GP20
+DC     -------- GP16
+CS     -------- GP17
+BLK    -------- 3V3(OUT)
 ```
 The physical build uses the ST7735 driver. The Wokwi simulation uses an ILI9341 display as a simulator-compatible substitute.
 
